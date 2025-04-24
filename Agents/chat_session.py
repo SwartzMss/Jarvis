@@ -1,18 +1,27 @@
 import asyncio
 from agents import Runner, TResponseInputItem
 from dispatcher_agent import create_dispatcher_agent
+from mcp_server_manager import mcp_server_manager
 
 class ChatSession:
     def __init__(self):
         self.dispatcher_agent = None
         self.inputs = []
+        self._initialized = False
         
     async def initialize(self):
         """初始化会话"""
-        self.dispatcher_agent = await create_dispatcher_agent()
+        if not self._initialized:
+            # 确保 MCP server 已初始化
+            await mcp_server_manager.initialize_servers()
+            self.dispatcher_agent = await create_dispatcher_agent()
+            self._initialized = True
         
     async def process_message(self, message: str) -> str:
         """处理用户消息"""
+        if not self._initialized:
+            raise RuntimeError("Session not initialized")
+            
         if not message.strip():
             return "请输入有效消息"
             
@@ -25,4 +34,12 @@ class ChatSession:
         
     async def close(self):
         """清理资源"""
-        pass  # 如果需要清理资源，可以在这里添加 
+        if self._initialized:
+            try:
+                await mcp_server_manager.close()
+            except Exception as e:
+                print(f"Error closing session: {e}")
+            finally:
+                self._initialized = False
+                self.dispatcher_agent = None
+                self.inputs = [] 

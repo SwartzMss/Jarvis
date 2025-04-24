@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 import os
 
 from model_provider import model_provider, MODEL_NAME, client  
+from .mcp_server_manager import mcp_server_manager
 
 class BrowserAgentHooks(AgentHooks):
     def __init__(self):
@@ -18,12 +19,10 @@ class BrowserAgentHooks(AgentHooks):
         print(f"[浏览器代理] {agent.name} 完成执行...")
 
 async def create_browser_agent():
-    playwright = MCPServerStdio(
-        name="playwright",
-        params={"command": "npx", "args": ["-y", "@playwright/mcp@latest"], "env": {}},
-        cache_tools_list=True,
-    )
-    await playwright.connect()
+    # 获取 playwright server
+    playwright = mcp_server_manager.get_server("playwright")
+    if not playwright:
+        raise RuntimeError("Playwright server 未初始化")
     
     hooks = BrowserAgentHooks()
     agent = Agent(
@@ -41,3 +40,5 @@ async def create_browser_agent():
         model_settings=ModelSettings(temperature=0.3, top_p=0.9),
     )
     return agent, playwright
+
+

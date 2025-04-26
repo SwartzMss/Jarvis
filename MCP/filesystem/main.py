@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import re
 from typing import List, Dict, Any
+import base64
 
 # 配置日志
 logger = logging.getLogger("filesystem_server")
@@ -136,34 +137,25 @@ def move_file(source: str, destination: str) -> str:
         return f"Error: {str(e)}"
 
 @mcp.tool()
-def search_files(path: str, pattern: str) -> str:
+def read_file_bytes(path: str):
     """
-    搜索文件。
-    
+    以二进制形式读取文件内容（原生bytes，不做base64编码）。
+
     参数：
-      - path: 搜索起始目录
-      - pattern: 搜索模式（支持通配符）
-    
+      - path: 文件路径
+
     返回：
-      匹配的文件列表
+      文件的二进制内容（bytes）
     """
     try:
-        search_path = Path(path)
-        if not search_path.exists():
-            return f"Error: Directory not found: {path}"
-        if not search_path.is_dir():
-            return f"Error: Path is not a directory: {path}"
-            
-        results = []
-        for file_path in search_path.rglob(pattern):
-            if file_path.is_file():
-                results.append(str(file_path))
-                
-        if not results:
-            return "No matching files found"
-        return "\n".join(results)
+        file_path = Path(path)
+        if not file_path.exists():
+            return f"Error: File not found: {path}"
+        if not file_path.is_file():
+            return f"Error: Path is not a file: {path}"
+        return file_path.read_bytes()
     except Exception as e:
-        logger.exception("Failed to search files")
+        logger.exception("Failed to read file in binary mode")
         return f"Error: {str(e)}"
 
 @mcp.tool()
@@ -195,6 +187,33 @@ def get_file_info(path: str) -> str:
         return json.dumps(info, indent=2)
     except Exception as e:
         logger.exception("Failed to get file info")
+        return f"Error: {str(e)}"
+
+@mcp.tool()
+def read_file_binary(path: str) -> str:
+    """
+    以二进制形式读取文件内容。
+    
+    参数：
+      - path: 文件路径
+    
+    返回：
+      文件的二进制内容（Base64编码）
+    """
+    try:
+        file_path = Path(path)
+        if not file_path.exists():
+            return f"Error: File not found: {path}"
+        if not file_path.is_file():
+            return f"Error: Path is not a file: {path}"
+            
+        # 读取二进制内容
+        binary_content = file_path.read_bytes()
+        # 将二进制内容转换为Base64编码
+        base64_content = base64.b64encode(binary_content).decode('utf-8')
+        return base64_content
+    except Exception as e:
+        logger.exception("Failed to read file in binary mode")
         return f"Error: {str(e)}"
 
 if __name__ == "__main__":

@@ -5,9 +5,35 @@ from typing import Dict, Any, List, Optional
 import json
 from bson import ObjectId
 from bson.json_util import dumps, loads
+import sys
+import os
 
 # 配置日志
 logger = logging.getLogger("mongodb_server")
+logger.setLevel(logging.DEBUG)
+
+# 清除现有的处理器
+logger.handlers = []
+
+# 添加控制台处理器
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+# 添加文件处理器
+file_handler = logging.FileHandler('mongodb_server.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+# 确保日志不会被其他处理器捕获
+logger.propagate = False
+
+logger.info("Starting MongoDB MCP Server...")
+logger.debug(f"Current working directory: {os.getcwd()}")
+logger.debug(f"Environment variables: {dict(os.environ)}")
 
 # 初始化 FastMCP 服务
 mcp = FastMCP(
@@ -44,10 +70,15 @@ def connect(uri: str, read_only: bool = False) -> str:
     """
     try:
         global mongo_client
+        logger.info(f"Attempting to connect to MongoDB with URI: {uri}")
         mongo_client = MongoDBClient(uri, read_only)
+        # 测试连接
+        mongo_client.client.server_info()
+        logger.info("Successfully connected to MongoDB")
         return "Successfully connected to MongoDB"
     except Exception as e:
-        logger.exception("Failed to connect to MongoDB")
+        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+        mongo_client = None
         return f"Error: {str(e)}"
 
 @mcp.tool()
@@ -199,5 +230,37 @@ def aggregate(collection: str, pipeline: List[Dict]) -> str:
         logger.exception("Failed to execute aggregation")
         return f"Error: {str(e)}"
 
+# 在 mcp.run() 之前添加自动连接逻辑
+uri = os.environ.get("MCP_MONGODB_URI")
+logger.debug(f"Environment MCP_MONGODB_URI: {uri}")
+
+if uri:
+    logger.info(f"Received MongoDB URI from environment: {uri}")
+    # 可选：支持只读模式
+    read_only = os.environ.get("MCP_MONGODB_READONLY", "").lower() == "true"
+    logger.debug(f"Environment MCP_MONGODB_READONLY: {read_only}")
+    
+    if read_only:
+        logger.info("Read-only mode enabled")
+    # 自动连接
+    logger.info("Attempting to connect to MongoDB...")
+    try:
+        result = connect(uri, read_only)
+        logger.info(f"Connection result: {result}")
+        if not result.startswith("Successfully"):
+            logger.error("Failed to establish MongoDB connection")
+            sys.exit(1)
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+        sys.exit(1)
+else:
+    logger.warning("No MongoDB URI provided in environment variables")
+    logger.info("Server will start but will not be able to process MongoDB operations until connected")
+
 if __name__ == "__main__":
-    mcp.run() 
+    logger.info("Starting MCP server...")
+    try:
+        mcp.run()
+    except Exception as e:
+        logger.error(f"Failed to start MCP server: {str(e)}")
+        raise 

@@ -5,7 +5,8 @@ import logging
 
 mcp = FastMCP(
     name="rg.exe File Search Service",
-    description="MCP service for comprehensive file search based on ripgrep (rg.exe)."
+    description="MCP service for comprehensive file search based on ripgrep (rg.exe).",
+    dependencies=["psutil"]
 )
 
 @mcp.tool()

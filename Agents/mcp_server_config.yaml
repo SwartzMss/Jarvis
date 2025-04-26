@@ -5,21 +5,30 @@ servers:
       args: ["-y", "@playwright/mcp@latest"]
       env: {}
     cache_tools_list: true
-    
-  mongodb:
+
+  localSearch:
     params:
-      command: npx
-      args: ["-y", "mcp-mongo-server", "mongodb://localhost:27017/family"]
+      command: uv
+      args: ["run", "../MCP/localsearch/main.py"]
       env: {}
     cache_tools_list: true
-    
+
   filesystem:
     params:
       command: uv
-      args: ["run", "MCP/filesystem/main.py"]
+      args: ["run", "../MCP/filesystem/main.py"]
       env: {}
     cache_tools_list: true
     
+  mongodb:
+    params:
+      command: uv
+      args: ["run", "../MCP/mongodb/main.py"]
+      env:
+        MCP_MONGODB_URI: "mongodb://localhost:27017/family"
+        MCP_MONGODB_READONLY: "false"
+    cache_tools_list: true
+
   # 可以添加更多的 server 配置
   # another_server:
   #   params:

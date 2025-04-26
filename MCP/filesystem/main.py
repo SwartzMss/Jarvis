@@ -14,7 +14,7 @@ logger = logging.getLogger("filesystem_server")
 mcp = FastMCP(
     name="FileSystem MCP Server",
     description="Tool for file system operations",
-    dependencies=["pathlib", "shutil"]
+    dependencies=["pathlib"]
 )
 
 @mcp.tool()

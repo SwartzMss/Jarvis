@@ -1,0 +1,29 @@
+servers:
+  playwright:
+    params:
+      command: npx
+      args: ["-y", "@playwright/mcp@latest"]
+      env: {}
+    cache_tools_list: true
+    
+  mongodb:
+    params:
+      command: npx
+      args: ["-y", "mcp-mongo-server", "mongodb://localhost:27017/family"]
+      env: {}
+    cache_tools_list: true
+    
+  filesystem:
+    params:
+      command: uv
+      args: ["run", "MCP/filesystem/main.py"]
+      env: {}
+    cache_tools_list: true
+    
+  # 可以添加更多的 server 配置
+  # another_server:
+  #   params:
+  #     command: ...
+  #     args: [...]
+  #     env: {}
+  #   cache_tools_list: true 

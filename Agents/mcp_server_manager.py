@@ -28,7 +28,6 @@ class MCPServerManager:
         for server_name, server_config in self._config.get('servers', {}).items():
             print(f"\n[MCP Manager] 正在初始化 {server_name} server...")
             print(f"[MCP Manager] 命令: {server_config['params']['command']} {' '.join(server_config['params']['args'])}")
-            print(f"[MCP Manager] 环境变量: {server_config['params'].get('env', {})}")
             
             server = MCPServerStdio(
                 name=server_name,

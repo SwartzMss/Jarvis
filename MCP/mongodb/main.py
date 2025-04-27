@@ -7,6 +7,7 @@ from bson import ObjectId
 from bson.json_util import dumps, loads
 import sys
 import os
+import argparse
 
 # 配置日志
 logger = logging.getLogger("mongodb_server")
@@ -231,31 +232,32 @@ def aggregate(collection: str, pipeline: List[Dict]) -> str:
         return f"Error: {str(e)}"
 
 # 在 mcp.run() 之前添加自动连接逻辑
-uri = os.environ.get("MCP_MONGODB_URI")
-logger.debug(f"Environment MCP_MONGODB_URI: {uri}")
+# 从启动参数中获取 MongoDB 连接信息
+parser = argparse.ArgumentParser(description='MongoDB MCP Server')
+parser.add_argument('--uri', type=str, required=True, help='MongoDB connection URI')
+parser.add_argument('--read-only', action='store_true', help='Enable read-only mode')
+args = parser.parse_args()
 
-if uri:
-    logger.info(f"Received MongoDB URI from environment: {uri}")
-    # 可选：支持只读模式
-    read_only = os.environ.get("MCP_MONGODB_READONLY", "").lower() == "true"
-    logger.debug(f"Environment MCP_MONGODB_READONLY: {read_only}")
-    
-    if read_only:
-        logger.info("Read-only mode enabled")
-    # 自动连接
-    logger.info("Attempting to connect to MongoDB...")
-    try:
-        result = connect(uri, read_only)
-        logger.info(f"Connection result: {result}")
-        if not result.startswith("Successfully"):
-            logger.error("Failed to establish MongoDB connection")
-            sys.exit(1)
-    except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+uri = args.uri
+read_only = args.read_only
+
+logger.debug(f"MongoDB URI: {uri}")
+logger.debug(f"Read-only mode: {read_only}")
+
+logger.info(f"Received MongoDB URI: {uri}")
+if read_only:
+    logger.info("Read-only mode enabled")
+# 自动连接
+logger.info("Attempting to connect to MongoDB...")
+try:
+    result = connect(uri, read_only)
+    logger.info(f"Connection result: {result}")
+    if not result.startswith("Successfully"):
+        logger.error("Failed to establish MongoDB connection")
         sys.exit(1)
-else:
-    logger.warning("No MongoDB URI provided in environment variables")
-    logger.info("Server will start but will not be able to process MongoDB operations until connected")
+except Exception as e:
+    logger.error(f"Failed to connect to MongoDB: {str(e)}")
+    sys.exit(1)
 
 if __name__ == "__main__":
     logger.info("Starting MCP server...")

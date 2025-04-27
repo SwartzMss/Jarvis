@@ -6,6 +6,10 @@ import argparse
 import logging
 import os
 import sys
+import json
+from gridfs import GridFS
+from datetime import datetime
+from bson import ObjectId
 
 # ---------------------------------------------------------------------------
 # 日志：全部写到 stderr / 文件，严禁写到 stdout
@@ -43,10 +47,14 @@ mcp = FastMCP(
 # ---------------------------------------------------------------------------
 class MongoDBClient:
     def __init__(self, uri: str, read_only: bool = False) -> None:
+        logger.info(f"初始化 MongoDBClient: uri={uri}, read_only={read_only}")
         self.client = MongoClient(uri, uuidRepresentation="standard")
         self.read_only = read_only
         # 解析库名；没有就默认 admin
         self.db_name = (uri.split("/", 3)[-1].split("?", 1)[0] or "admin")
+        logger.info(f"数据库名称: {self.db_name}")
+        # 初始化 GridFS
+        self.fs = GridFS(self._db())
 
     # -- helpers ------------------------------------------------------------
     def _db(self):
@@ -54,12 +62,14 @@ class MongoDBClient:
 
     def _coll(self, name: Optional[str]):
         if name:
+            logger.info(f"使用指定集合: {name}")
             return self._db()[name]
 
         # 未指定集合 → 第一个集合
         names = self._db().list_collection_names()
         if not names:
             raise ValueError("Database contains no collections")
+        logger.info(f"使用第一个集合: {names[0]}")
         return self._db()[names[0]]
 
 # 全局客户端
@@ -70,10 +80,10 @@ mongo_client: Optional[MongoDBClient] = None
 # ---------------------------------------------------------------------------
 @mcp.tool()
 def connect(uri: str, read_only: bool = False) -> str:
-    """连接到 MongoDB。"""
+    """连接到 MongoDB 数据库。用于建立数据库连接，必须在执行其他操作前调用。"""
     global mongo_client
     try:
-        logger.info("Connecting to %s (read_only=%s)", uri, read_only)
+        logger.info(f"连接参数: uri={uri}, read_only={read_only}")
         mongo_client = MongoDBClient(uri, read_only)
         # 探活
         mongo_client.client.admin.command("ping")
@@ -85,7 +95,7 @@ def connect(uri: str, read_only: bool = False) -> str:
 
 @mcp.tool()
 def disconnect() -> str:
-    """断开 MongoDB 连接。"""
+    """断开 MongoDB 数据库连接。用于清理资源，建议在完成所有操作后调用。"""
     global mongo_client
     if mongo_client:
         mongo_client.client.close()
@@ -103,8 +113,20 @@ def query(
     sort: Optional[Dict[str, int]] = None
 ) -> str:
     """
-    执行 MongoDB 查询
+    查询 MongoDB 中的普通文档数据。用于查询非文件类型的结构化数据，如用户信息、配置信息等。
+    
+    Args:
+        collection: 集合名称
+        filter: 查询条件，如 {"age": {"$gt": 18}}
+        projection: 返回字段，如 {"name": 1, "age": 1}
+        limit: 返回结果数量限制
+        skip: 跳过指定数量的结果
+        sort: 排序条件，如 {"age": 1}
     """
+    logger.info(f"查询参数: collection={collection}, filter={json.dumps(filter, ensure_ascii=False)}, "
+                f"projection={json.dumps(projection, ensure_ascii=False)}, limit={limit}, "
+                f"skip={skip}, sort={json.dumps(sort, ensure_ascii=False)}")
+    
     if not mongo_client:
         return "Error: Not connected"
 
@@ -119,14 +141,18 @@ def query(
         if limit:
             cursor = cursor.limit(limit)
 
-        return dumps(list(cursor))
+        result = dumps(list(cursor))
+        logger.info(f"查询结果长度: {len(result)}")
+        return result
     except Exception as exc:
         logger.exception("Query failed")
         return f"Error: {exc}"
 
 @mcp.tool()
 def insert(collection: str = None, documents: List[Dict] = None) -> str:
-    """插入文档。"""
+    """插入普通文档数据。用于添加非文件类型的结构化数据，如用户信息、配置信息等。"""
+    logger.info(f"插入参数: collection={collection}, documents={json.dumps(documents, ensure_ascii=False)}")
+    
     if not mongo_client:
         return "Error: Not connected"
     if mongo_client.read_only:
@@ -136,6 +162,7 @@ def insert(collection: str = None, documents: List[Dict] = None) -> str:
 
     try:
         res = mongo_client._coll(collection).insert_many(documents)
+        logger.info(f"插入结果: {len(res.inserted_ids)} 个文档")
         return f"Inserted {len(res.inserted_ids)} documents"
     except Exception as exc:
         logger.exception("Insert failed")
@@ -147,7 +174,10 @@ def update(collection: str = None,
            update: Dict = None,
            upsert: bool = False,
            multi: bool = False) -> str:
-    """更新文档。"""
+    """更新普通文档数据。用于修改非文件类型的结构化数据，如用户信息、配置信息等。"""
+    logger.info(f"更新参数: collection={collection}, filter={json.dumps(filter, ensure_ascii=False)}, "
+                f"update={json.dumps(update, ensure_ascii=False)}, upsert={upsert}, multi={multi}")
+    
     if not mongo_client:
         return "Error: Not connected"
     if mongo_client.read_only:
@@ -161,6 +191,8 @@ def update(collection: str = None,
             res = coll.update_many(filter, update, upsert=upsert)
         else:
             res = coll.update_one(filter, update, upsert=upsert)
+        logger.info(f"更新结果: matched={res.matched_count}, modified={res.modified_count}, "
+                   f"upserted_id={res.upserted_id}")
         return f"matched={res.matched_count}, modified={res.modified_count}, upserted_id={res.upserted_id}"
     except Exception as exc:
         logger.exception("Update failed")
@@ -168,7 +200,9 @@ def update(collection: str = None,
 
 @mcp.tool()
 def delete(collection: str = None, filter: Dict = None) -> str:
-    """删除文档。"""
+    """删除普通文档数据。用于移除非文件类型的结构化数据，如用户信息、配置信息等。"""
+    logger.info(f"删除参数: collection={collection}, filter={json.dumps(filter, ensure_ascii=False)}")
+    
     if not mongo_client:
         return "Error: Not connected"
     if mongo_client.read_only:
@@ -178,6 +212,7 @@ def delete(collection: str = None, filter: Dict = None) -> str:
 
     try:
         res = mongo_client._coll(collection).delete_many(filter)
+        logger.info(f"删除结果: {res.deleted_count} 个文档")
         return f"Deleted {res.deleted_count} documents"
     except Exception as exc:
         logger.exception("Delete failed")
@@ -185,7 +220,9 @@ def delete(collection: str = None, filter: Dict = None) -> str:
 
 @mcp.tool()
 def aggregate(collection: str = None, pipeline: List[Dict] = None) -> str:
-    """聚合查询。"""
+    """执行聚合查询。用于对普通文档数据进行复杂的统计和分析。"""
+    logger.info(f"聚合参数: collection={collection}, pipeline={json.dumps(pipeline, ensure_ascii=False)}")
+    
     if not mongo_client:
         return "Error: Not connected"
     if not pipeline:
@@ -193,9 +230,221 @@ def aggregate(collection: str = None, pipeline: List[Dict] = None) -> str:
 
     try:
         res = mongo_client._coll(collection).aggregate(pipeline)
-        return dumps(list(res))
+        result = dumps(list(res))
+        logger.info(f"聚合结果长度: {len(result)}")
+        return result
     except Exception as exc:
         logger.exception("Aggregate failed")
+        return f"Error: {exc}"
+
+@mcp.tool()
+def status() -> str:
+    """获取当前 MongoDB 连接状态。用于检查数据库是否已连接，以及连接的具体信息。"""
+    if not mongo_client:
+        return "未连接"
+    
+    try:
+        # 尝试执行 ping 命令来验证连接是否仍然有效
+        mongo_client.client.admin.command("ping")
+        return f"已连接 (数据库: {mongo_client.db_name}, 只读模式: {mongo_client.read_only})"
+    except Exception as exc:
+        logger.exception("状态检查失败")
+        return f"连接已断开: {exc}"
+
+@mcp.tool()
+def store_file(
+    file_path: str,
+    tags: List[str] = None,
+    metadata: Dict = None,
+    collection: str = "fs"
+) -> str:
+    """
+    将本地文件存储到 MongoDB GridFS。用于存储图片、视频等二进制文件。
+    
+    Args:
+        file_path: 本地文件路径，如 "./photos/image.jpg"
+        tags: 文件标签列表，如 ["风景", "旅游"]
+        metadata: 额外的元数据，如 {"location": "北京", "拍摄时间": "2024-01-01"}
+        collection: GridFS 集合名称，默认为 "fs"
+    """
+    logger.info(f"存储文件参数: file_path={file_path}, tags={tags}, metadata={metadata}, collection={collection}")
+    
+    if not mongo_client:
+        return "Error: Not connected"
+    if mongo_client.read_only:
+        return "Error: server is read-only"
+    if not os.path.exists(file_path):
+        return f"Error: 文件不存在: {file_path}"
+
+    try:
+        # 准备元数据
+        file_metadata = {
+            "filename": os.path.basename(file_path),
+            "contentType": "application/octet-stream",  # 默认类型
+            "uploadDate": datetime.utcnow(),
+            "tags": tags or [],
+            **(metadata or {})
+        }
+
+        # 根据文件扩展名设置 content type
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in ['.jpg', '.jpeg']:
+            file_metadata["contentType"] = "image/jpeg"
+        elif ext == '.png':
+            file_metadata["contentType"] = "image/png"
+        elif ext == '.gif':
+            file_metadata["contentType"] = "image/gif"
+        elif ext in ['.mp4', '.mov']:
+            file_metadata["contentType"] = "video/mp4"
+        elif ext == '.pdf':
+            file_metadata["contentType"] = "application/pdf"
+
+        # 读取并存储文件
+        with open(file_path, 'rb') as f:
+            file_id = mongo_client.fs.put(
+                f,
+                **file_metadata
+            )
+        
+        logger.info(f"文件存储成功: file_id={file_id}")
+        return f"文件存储成功，ID: {file_id}"
+    except Exception as exc:
+        logger.exception("文件存储失败")
+        return f"Error: {exc}"
+
+@mcp.tool()
+def find_files(
+    tags: List[str] = None,
+    filename: str = None,
+    content_type: str = None,
+    output_dir: str = "./downloads",
+    collection: str = "fs",
+    limit: int = 1
+) -> str:
+    """
+    查询并下载 GridFS 中的文件。用于查找和获取图片、视频等二进制文件。
+    
+    Args:
+        tags: 文件标签列表，如 ["风景", "旅游"]
+        filename: 文件名，如 "image.jpg"
+        content_type: 文件类型，如 "image/jpeg"
+        output_dir: 下载文件保存的目录，默认为 "./downloads"
+        collection: GridFS 集合名称，默认为 "fs"
+        limit: 返回文件数量限制，默认为 1
+    """
+    logger.info(f"查询文件参数: tags={tags}, filename={filename}, content_type={content_type}, output_dir={output_dir}, collection={collection}, limit={limit}")
+    
+    if not mongo_client:
+        return "Error: Not connected"
+
+    try:
+        # 确保输出目录存在，并转换为绝对路径
+        output_dir = os.path.abspath(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # 构建查询条件
+        query = {}
+        if tags:
+            query["tags"] = {"$all": tags}
+        if filename:
+            query["filename"] = filename
+        if content_type:
+            query["contentType"] = content_type
+
+        files = list(mongo_client.fs.find(query).limit(limit))
+        result = []
+        
+        for file in files:
+            # 生成输出文件路径（使用绝对路径）
+            output_path = os.path.abspath(os.path.join(output_dir, f"{file._id}_{file.filename}"))
+            
+            # 下载文件
+            with open(output_path, 'wb') as f:
+                f.write(file.read())
+            
+            # 记录文件信息
+            file_info = {
+                "file_id": str(file._id),
+                "filename": file.filename,
+                "local_path": output_path,  # 使用绝对路径
+                "content_type": file.content_type,
+                "upload_date": file.upload_date.isoformat(),
+                "length": file.length,
+                "tags": file.tags if hasattr(file, 'tags') else [],
+                "metadata": {k: v for k, v in (file.metadata or {}).items() 
+                           if k not in ['filename', 'contentType', 'uploadDate', 'tags']}
+            }
+            result.append(file_info)
+            logger.info(f"文件已下载到: {output_path}")
+        
+        if not result:
+            logger.info("未找到匹配的文件")
+            return "未找到匹配的文件"
+            
+        logger.info(f"找到并下载了 {len(result)} 个文件")
+        return f"找到 {len(result)} 个文件：\n{dumps(result)}"
+    except Exception as exc:
+        logger.exception("文件查询和下载失败")
+        return f"Error: {exc}"
+
+@mcp.tool()
+def get_file(
+    file_id: str,
+    output_dir: str = "./downloads",
+    collection: str = "fs"
+) -> str:
+    """
+    根据文件ID获取并下载 GridFS 中的文件。用于获取特定的图片、视频等二进制文件。
+    
+    Args:
+        file_id: 文件ID（字符串格式的 ObjectId）
+        output_dir: 下载文件保存的目录，默认为 "./downloads"
+        collection: GridFS 集合名称，默认为 "fs"
+    """
+    logger.info(f"获取文件参数: file_id={file_id}, output_dir={output_dir}, collection={collection}")
+    
+    if not mongo_client:
+        return "Error: Not connected"
+
+    try:
+        # 确保输出目录存在，并转换为绝对路径
+        output_dir = os.path.abspath(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 将字符串 ID 转换为 ObjectId
+        try:
+            object_id = ObjectId(file_id)
+        except Exception as e:
+            logger.error(f"无效的文件ID格式: {file_id}")
+            return f"Error: 无效的文件ID格式: {file_id}"
+        
+        # 获取文件
+        file = mongo_client.fs.get(object_id)
+        
+        # 生成输出文件路径（使用绝对路径）
+        output_path = os.path.abspath(os.path.join(output_dir, f"{file_id}_{file.filename}"))
+        
+        # 下载文件
+        with open(output_path, 'wb') as f:
+            f.write(file.read())
+        
+        # 返回文件信息
+        result = {
+            "file_id": str(file._id),
+            "filename": file.filename,
+            "local_path": output_path,  # 使用绝对路径
+            "content_type": file.content_type,
+            "upload_date": file.upload_date.isoformat(),
+            "length": file.length,
+            "tags": file.tags if hasattr(file, 'tags') else [],
+            "metadata": {k: v for k, v in (file.metadata or {}).items() 
+                       if k not in ['filename', 'contentType', 'uploadDate', 'tags']}
+        }
+        
+        logger.info(f"文件已下载到: {output_path}")
+        return dumps(result)
+    except Exception as exc:
+        logger.exception("获取文件失败")
         return f"Error: {exc}"
 
 # ---------------------------------------------------------------------------
@@ -214,6 +463,9 @@ def _auto_connect():
     if not res.startswith("Successfully"):
         logger.error("Auto connect failed: %s", res)
         sys.exit(1)
+    else:
+        # 打印初始连接状态
+        logger.info("初始连接状态: %s", status())
 
 # ---------------------------------------------------------------------------
 # main

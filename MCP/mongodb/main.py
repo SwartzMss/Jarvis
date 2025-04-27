@@ -315,8 +315,6 @@ def store_file(
 @mcp.tool()
 def find_files(
     tags: List[str] = None,
-    filename: str = None,
-    content_type: str = None,
     output_dir: str = "./downloads",
     collection: str = "fs",
     limit: int = 1
@@ -326,13 +324,11 @@ def find_files(
     
     Args:
         tags: 文件标签列表，如 ["风景", "旅游"]
-        filename: 文件名，如 "image.jpg"
-        content_type: 文件类型，如 "image/jpeg"
         output_dir: 下载文件保存的目录，默认为 "./downloads"
         collection: GridFS 集合名称，默认为 "fs"
         limit: 返回文件数量限制，默认为 1
     """
-    logger.info(f"查询文件参数: tags={tags}, filename={filename}, content_type={content_type}, output_dir={output_dir}, collection={collection}, limit={limit}")
+    logger.info(f"查询文件参数: tags={tags}, output_dir={output_dir}, collection={collection}, limit={limit}")
     
     if not mongo_client:
         return "Error: Not connected"
@@ -345,11 +341,7 @@ def find_files(
         # 构建查询条件
         query = {}
         if tags:
-            query["tags"] = {"$all": tags}
-        if filename:
-            query["filename"] = filename
-        if content_type:
-            query["contentType"] = content_type
+            query["metadata.tags"] = {"$all": tags}  # 从 metadata 中查询标签
 
         files = list(mongo_client.fs.find(query).limit(limit))
         result = []
@@ -370,7 +362,7 @@ def find_files(
                 "content_type": file.content_type,
                 "upload_date": file.upload_date.isoformat(),
                 "length": file.length,
-                "tags": file.tags if hasattr(file, 'tags') else [],
+                "tags": file.metadata.get("tags", []) if file.metadata else [],  # 从 metadata 中获取标签
                 "metadata": {k: v for k, v in (file.metadata or {}).items() 
                            if k not in ['filename', 'contentType', 'uploadDate', 'tags']}
             }

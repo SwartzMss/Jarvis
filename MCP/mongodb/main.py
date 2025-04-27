@@ -1,268 +1,228 @@
 from mcp.server.fastmcp import FastMCP
-import logging
 from pymongo import MongoClient
-from typing import Dict, Any, List, Optional
-import json
-from bson import ObjectId
-from bson.json_util import dumps, loads
-import sys
-import os
+from bson.json_util import dumps
+from typing import Dict, List, Optional, Any 
 import argparse
+import logging
+import os
+import sys
 
-# 配置日志
+# ---------------------------------------------------------------------------
+# 日志：全部写到 stderr / 文件，严禁写到 stdout
+# ---------------------------------------------------------------------------
+LOG_FMT = "%(asctime)s - %(levelname)s - %(message)s"
 logger = logging.getLogger("mongodb_server")
 logger.setLevel(logging.DEBUG)
+logger.handlers.clear()
 
-# 清除现有的处理器
-logger.handlers = []
-
-# 添加控制台处理器
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
+console_handler = logging.StreamHandler(sys.stderr)      # 关键：stderr
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter(LOG_FMT))
 logger.addHandler(console_handler)
 
-# 添加文件处理器
-file_handler = logging.FileHandler('mongodb_server.log')
+file_handler = logging.FileHandler("mongodb_server.log", encoding="utf-8")
 file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(formatter)
+file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - "
+                                            "%(levelname)s - %(message)s"))
 logger.addHandler(file_handler)
 
-# 确保日志不会被其他处理器捕获
 logger.propagate = False
 
-logger.info("Starting MongoDB MCP Server...")
-logger.debug(f"Current working directory: {os.getcwd()}")
-logger.debug(f"Environment variables: {dict(os.environ)}")
-
-# 初始化 FastMCP 服务
+# ---------------------------------------------------------------------------
+# MCP 服务实例
+# ---------------------------------------------------------------------------
 mcp = FastMCP(
     name="MongoDB MCP Server",
-    description="Tool for MongoDB database operations",
+    description="Provide CRUD & aggregation operations for a single MongoDB "
+                "database via MCP",
     dependencies=["pymongo"]
 )
 
+# ---------------------------------------------------------------------------
+# MongoDB Client 封装
+# ---------------------------------------------------------------------------
 class MongoDBClient:
-    def __init__(self, uri: str, read_only: bool = False):
-        self.client = MongoClient(uri)
+    def __init__(self, uri: str, read_only: bool = False) -> None:
+        self.client = MongoClient(uri, uuidRepresentation="standard")
         self.read_only = read_only
-        
-    def get_database(self, db_name: str):
-        return self.client[db_name]
-        
-    def get_collection(self, db_name: str, collection_name: str):
-        return self.get_database(db_name)[collection_name]
+        # 解析库名；没有就默认 admin
+        self.db_name = (uri.split("/", 3)[-1].split("?", 1)[0] or "admin")
 
-# 全局 MongoDB 客户端实例
+    # -- helpers ------------------------------------------------------------
+    def _db(self):
+        return self.client[self.db_name]
+
+    def _coll(self, name: Optional[str]):
+        if name:
+            return self._db()[name]
+
+        # 未指定集合 → 第一个集合
+        names = self._db().list_collection_names()
+        if not names:
+            raise ValueError("Database contains no collections")
+        return self._db()[names[0]]
+
+# 全局客户端
 mongo_client: Optional[MongoDBClient] = None
 
+# ---------------------------------------------------------------------------
+# MCP TOOLS
+# ---------------------------------------------------------------------------
 @mcp.tool()
 def connect(uri: str, read_only: bool = False) -> str:
-    """
-    连接到 MongoDB 数据库
-    
-    参数：
-      - uri: MongoDB 连接字符串
-      - read_only: 是否只读模式
-    
-    返回：
-      连接状态
-    """
+    """连接到 MongoDB。"""
+    global mongo_client
     try:
-        global mongo_client
-        logger.info(f"Attempting to connect to MongoDB with URI: {uri}")
+        logger.info("Connecting to %s (read_only=%s)", uri, read_only)
         mongo_client = MongoDBClient(uri, read_only)
-        # 测试连接
-        mongo_client.client.server_info()
-        logger.info("Successfully connected to MongoDB")
-        return "Successfully connected to MongoDB"
-    except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+        # 探活
+        mongo_client.client.admin.command("ping")
+        return "Successfully connected"
+    except Exception as exc:
         mongo_client = None
-        return f"Error: {str(e)}"
+        logger.exception("Connect failed")
+        return f"Error: {exc}"
 
 @mcp.tool()
-def query(collection: str, filter: Dict = None, projection: Dict = None, 
-         limit: int = None, skip: int = None, sort: Dict = None) -> str:
+def disconnect() -> str:
+    """断开 MongoDB 连接。"""
+    global mongo_client
+    if mongo_client:
+        mongo_client.client.close()
+        mongo_client = None
+        return "Disconnected"
+    return "Not connected"
+
+@mcp.tool()
+def query(
+    collection: Optional[str] = None,
+    filter: Optional[Dict[str, Any]] = None,
+    projection: Optional[Dict[str, int]] = None,
+    limit: Optional[int] = None,
+    skip: Optional[int] = None,
+    sort: Optional[Dict[str, int]] = None
+) -> str:
     """
     执行 MongoDB 查询
-    
-    参数：
-      - collection: 集合名称
-      - filter: 查询条件
-      - projection: 投影
-      - limit: 限制返回数量
-      - skip: 跳过数量
-      - sort: 排序条件
-    
-    返回：
-      查询结果
     """
+    if not mongo_client:
+        return "Error: Not connected"
+
     try:
-        if not mongo_client:
-            return "Error: Not connected to MongoDB"
-            
-        db_name, collection_name = collection.split('.')
-        coll = mongo_client.get_collection(db_name, collection_name)
-        
-        cursor = coll.find(filter or {}, projection or {})
-        
+        coll = mongo_client._coll(collection)
+        cursor = coll.find(filter or {}, projection)
+
         if sort:
-            cursor = cursor.sort(sort)
+            cursor = cursor.sort(list(sort.items()))
         if skip:
             cursor = cursor.skip(skip)
         if limit:
             cursor = cursor.limit(limit)
-            
-        results = list(cursor)
-        return dumps(results)
-    except Exception as e:
-        logger.exception("Failed to execute query")
-        return f"Error: {str(e)}"
+
+        return dumps(list(cursor))
+    except Exception as exc:
+        logger.exception("Query failed")
+        return f"Error: {exc}"
 
 @mcp.tool()
-def insert(collection: str, documents: List[Dict]) -> str:
-    """
-    插入文档
-    
-    参数：
-      - collection: 集合名称
-      - documents: 要插入的文档列表
-    
-    返回：
-      插入结果
-    """
+def insert(collection: str = None, documents: List[Dict] = None) -> str:
+    """插入文档。"""
+    if not mongo_client:
+        return "Error: Not connected"
+    if mongo_client.read_only:
+        return "Error: server is read-only"
+    if not documents:
+        return "Error: no documents provided"
+
     try:
-        if not mongo_client:
-            return "Error: Not connected to MongoDB"
-        if mongo_client.read_only:
-            return "Error: Server is in read-only mode"
-            
-        db_name, collection_name = collection.split('.')
-        coll = mongo_client.get_collection(db_name, collection_name)
-        
-        result = coll.insert_many(documents)
-        return f"Successfully inserted {len(result.inserted_ids)} documents"
-    except Exception as e:
-        logger.exception("Failed to insert documents")
-        return f"Error: {str(e)}"
+        res = mongo_client._coll(collection).insert_many(documents)
+        return f"Inserted {len(res.inserted_ids)} documents"
+    except Exception as exc:
+        logger.exception("Insert failed")
+        return f"Error: {exc}"
 
 @mcp.tool()
-def update(collection: str, filter: Dict, update: Dict, 
-          upsert: bool = False, multi: bool = False) -> str:
-    """
-    更新文档
-    
-    参数：
-      - collection: 集合名称
-      - filter: 查询条件
-      - update: 更新操作
-      - upsert: 是否插入新文档
-      - multi: 是否更新多个文档
-    
-    返回：
-      更新结果
-    """
+def update(collection: str = None,
+           filter: Dict = None,
+           update: Dict = None,
+           upsert: bool = False,
+           multi: bool = False) -> str:
+    """更新文档。"""
+    if not mongo_client:
+        return "Error: Not connected"
+    if mongo_client.read_only:
+        return "Error: server is read-only"
+    if not (filter and update):
+        return "Error: filter & update required"
+
     try:
-        if not mongo_client:
-            return "Error: Not connected to MongoDB"
-        if mongo_client.read_only:
-            return "Error: Server is in read-only mode"
-            
-        db_name, collection_name = collection.split('.')
-        coll = mongo_client.get_collection(db_name, collection_name)
-        
-        result = coll.update_many(filter, update, upsert=upsert)
-        return f"Matched {result.matched_count} documents, modified {result.modified_count} documents"
-    except Exception as e:
-        logger.exception("Failed to update documents")
-        return f"Error: {str(e)}"
+        coll = mongo_client._coll(collection)
+        if multi:
+            res = coll.update_many(filter, update, upsert=upsert)
+        else:
+            res = coll.update_one(filter, update, upsert=upsert)
+        return f"matched={res.matched_count}, modified={res.modified_count}, upserted_id={res.upserted_id}"
+    except Exception as exc:
+        logger.exception("Update failed")
+        return f"Error: {exc}"
 
 @mcp.tool()
-def delete(collection: str, filter: Dict) -> str:
-    """
-    删除文档
-    
-    参数：
-      - collection: 集合名称
-      - filter: 查询条件
-    
-    返回：
-      删除结果
-    """
+def delete(collection: str = None, filter: Dict = None) -> str:
+    """删除文档。"""
+    if not mongo_client:
+        return "Error: Not connected"
+    if mongo_client.read_only:
+        return "Error: server is read-only"
+    if not filter:
+        return "Error: filter required"
+
     try:
-        if not mongo_client:
-            return "Error: Not connected to MongoDB"
-        if mongo_client.read_only:
-            return "Error: Server is in read-only mode"
-            
-        db_name, collection_name = collection.split('.')
-        coll = mongo_client.get_collection(db_name, collection_name)
-        
-        result = coll.delete_many(filter)
-        return f"Successfully deleted {result.deleted_count} documents"
-    except Exception as e:
-        logger.exception("Failed to delete documents")
-        return f"Error: {str(e)}"
+        res = mongo_client._coll(collection).delete_many(filter)
+        return f"Deleted {res.deleted_count} documents"
+    except Exception as exc:
+        logger.exception("Delete failed")
+        return f"Error: {exc}"
 
 @mcp.tool()
-def aggregate(collection: str, pipeline: List[Dict]) -> str:
-    """
-    执行聚合操作
-    
-    参数：
-      - collection: 集合名称
-      - pipeline: 聚合管道
-    
-    返回：
-      聚合结果
-    """
+def aggregate(collection: str = None, pipeline: List[Dict] = None) -> str:
+    """聚合查询。"""
+    if not mongo_client:
+        return "Error: Not connected"
+    if not pipeline:
+        return "Error: pipeline required"
+
     try:
-        if not mongo_client:
-            return "Error: Not connected to MongoDB"
-            
-        db_name, collection_name = collection.split('.')
-        coll = mongo_client.get_collection(db_name, collection_name)
-        
-        results = list(coll.aggregate(pipeline))
-        return dumps(results)
-    except Exception as e:
-        logger.exception("Failed to execute aggregation")
-        return f"Error: {str(e)}"
+        res = mongo_client._coll(collection).aggregate(pipeline)
+        return dumps(list(res))
+    except Exception as exc:
+        logger.exception("Aggregate failed")
+        return f"Error: {exc}"
 
-# 在 mcp.run() 之前添加自动连接逻辑
-# 从启动参数中获取 MongoDB 连接信息
-parser = argparse.ArgumentParser(description='MongoDB MCP Server')
-parser.add_argument('--uri', type=str, required=True, help='MongoDB connection URI')
-parser.add_argument('--read-only', action='store_true', help='Enable read-only mode')
-args = parser.parse_args()
+# ---------------------------------------------------------------------------
+# 自动连接（读取启动参数）
+# ---------------------------------------------------------------------------
+def _auto_connect():
+    parser = argparse.ArgumentParser(description="MongoDB MCP Server")
+    parser.add_argument("--uri", default="mongodb://localhost:27017/family",
+                        help="MongoDB URI (default: %(default)s)")
+    parser.add_argument("--read-only", action="store_true",
+                        help="Enable read-only mode")
+    args, _ = parser.parse_known_args()
 
-uri = args.uri
-read_only = args.read_only
-
-logger.debug(f"MongoDB URI: {uri}")
-logger.debug(f"Read-only mode: {read_only}")
-
-logger.info(f"Received MongoDB URI: {uri}")
-if read_only:
-    logger.info("Read-only mode enabled")
-# 自动连接
-logger.info("Attempting to connect to MongoDB...")
-try:
-    result = connect(uri, read_only)
-    logger.info(f"Connection result: {result}")
-    if not result.startswith("Successfully"):
-        logger.error("Failed to establish MongoDB connection")
+    logger.info("Auto-connecting with URI=%s  read_only=%s", args.uri, args.read_only)
+    res = connect(args.uri, args.read_only)
+    if not res.startswith("Successfully"):
+        logger.error("Auto connect failed: %s", res)
         sys.exit(1)
-except Exception as e:
-    logger.error(f"Failed to connect to MongoDB: {str(e)}")
-    sys.exit(1)
 
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    logger.info("Starting MCP server...")
+    _auto_connect()
+    logger.info("MCP server started (pid=%s, cwd=%s)", os.getpid(), os.getcwd())
     try:
-        mcp.run()
-    except Exception as e:
-        logger.error(f"Failed to start MCP server: {str(e)}")
-        raise 
+        mcp.run()        # FastMCP 会独占 stdout
+    except Exception:
+        logger.exception("MCP server stopped unexpectedly")
+        raise

@@ -20,7 +20,7 @@ servers:
   mongodb:
     params:
       command: uv
-      args: ["run", "--directory", "../MCP/mongodb", "main.py", "--uri", "mongodb://localhost:27017/family", "--read-only"]
+      args: ["run", "--directory", "../MCP/mongodb", "main.py", "--uri", "mongodb://localhost:27017/family"]
     cache_tools_list: true
 
   # 可以添加更多的 server 配置

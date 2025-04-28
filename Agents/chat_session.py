@@ -27,10 +27,21 @@ class ChatSession:
             
         self.inputs.append({"role": "user", "content": message})
         
-        result = await Runner.run(self.dispatcher_agent, self.inputs)
-        self.inputs = result.to_input_list()
-        
-        return result.final_output
+        try:
+            result = await Runner.run(self.dispatcher_agent, self.inputs)
+            self.inputs = result.to_input_list()
+            
+            # 格式化响应
+            response = result.final_output
+            if isinstance(response, dict):
+                # 如果是字典类型的响应（比如数据库查询结果），进行格式化
+                formatted_response = "查询结果：\n"
+                for key, value in response.items():
+                    formatted_response += f"{key}: {value}\n"
+                return formatted_response
+            return response
+        except Exception as e:
+            return f"处理消息时出错：{str(e)}"
         
     async def close(self):
         """清理资源"""

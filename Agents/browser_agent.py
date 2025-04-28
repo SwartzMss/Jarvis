@@ -5,18 +5,8 @@ from openai import AsyncOpenAI
 import os
 
 from model_provider import model_provider, MODEL_NAME, client  
-from .mcp_server_manager import mcp_server_manager
-
-class BrowserAgentHooks(AgentHooks):
-    def __init__(self):
-        self.visited_pages = []
-        self.extracted_content = []
-
-    async def on_start(self, context, agent):
-        print(f"[浏览器代理] {agent.name} 开始执行...")
-
-    async def on_end(self, context, agent, output):
-        print(f"[浏览器代理] {agent.name} 完成执行...")
+from mcp_server_manager import mcp_server_manager
+from agent_lifecycle_hooks import default_hooks
 
 async def create_browser_agent():
     # 获取 playwright server
@@ -24,7 +14,6 @@ async def create_browser_agent():
     if not playwright:
         raise RuntimeError("Playwright server 未初始化")
     
-    hooks = BrowserAgentHooks()
     agent = Agent(
         name="WebBrowser",
         instructions="你是一个智能网页浏览代理，可以帮助用户浏览和提取网页内容。你可以：\n"
@@ -35,10 +24,26 @@ async def create_browser_agent():
                     "5. 截图保存页面\n"
                     "6. 提取特定元素的内容",
         mcp_servers=[playwright],
-        hooks=hooks,
+        hooks=default_hooks,
         model=model_provider.get_model(MODEL_NAME),
         model_settings=ModelSettings(temperature=0.3, top_p=0.9),
     )
-    return agent, playwright
+    return agent
+
+# 创建工具
+class BrowserTool:
+    def __init__(self):
+        self._tool = None
+        
+    async def get_tool(self):
+        if self._tool is None:
+            agent = await create_browser_agent()
+            self._tool = agent.as_tool(
+                tool_name="browser",
+                tool_description="智能网页浏览工具。可以访问网页、提取内容、点击元素、填写表单、截图等。支持自动处理页面加载、等待元素出现、处理弹窗等复杂场景。"
+            )
+        return self._tool
+
+browser_tool = BrowserTool()
 
 

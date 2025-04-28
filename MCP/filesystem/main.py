@@ -50,12 +50,12 @@ def write_file(path: str, content: str) -> str:
       - content: 要写入的内容
     
     返回：
-      操作结果
+      操作结果，包含文件的绝对路径
     """
     try:
         file_path = Path(path)
         file_path.write_text(content, encoding='utf-8')
-        return f"Successfully wrote to {path}"
+        return f"Successfully wrote to {file_path.absolute()}"
     except Exception as e:
         logger.exception("Failed to write file")
         return f"Error: {str(e)}"

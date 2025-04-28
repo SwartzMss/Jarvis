@@ -80,7 +80,16 @@ mongo_client: Optional[MongoDBClient] = None
 # ---------------------------------------------------------------------------
 @mcp.tool()
 def connect(uri: str, read_only: bool = False) -> str:
-    """连接到 MongoDB 数据库。用于建立数据库连接，必须在执行其他操作前调用。"""
+    """连接到 MongoDB 数据库。用于建立数据库连接，必须在执行其他操作前调用。
+    
+    参数说明：
+    - uri: MongoDB 连接字符串，必填参数，格式如 "mongodb://localhost:27017/dbname"
+    - read_only: 是否只读模式，默认为 False，设置为 True 时禁止写入操作
+    
+    返回值:
+    - 成功: "Successfully connected"
+    - 失败: "Error: {具体错误信息}"
+    """
     global mongo_client
     try:
         logger.info(f"连接参数: uri={uri}, read_only={read_only}")
@@ -95,7 +104,12 @@ def connect(uri: str, read_only: bool = False) -> str:
 
 @mcp.tool()
 def disconnect() -> str:
-    """断开 MongoDB 数据库连接。用于清理资源，建议在完成所有操作后调用。"""
+    """断开 MongoDB 数据库连接。用于清理资源，建议在完成所有操作后调用。
+    
+    返回值:
+    - 已断开: "Disconnected"
+    - 未连接: "Not connected"
+    """
     global mongo_client
     if mongo_client:
         mongo_client.client.close()
@@ -112,16 +126,24 @@ def query(
     skip: Optional[int] = None,
     sort: Optional[Dict[str, int]] = None
 ) -> str:
-    """
-    查询 MongoDB 中的普通文档数据。用于查询非文件类型的结构化数据，如用户信息、配置信息等。
+    """查询 MongoDB 中的普通文档数据。用于查询非文件类型的结构化数据，如用户信息、配置信息等。
     
-    Args:
-        collection: 集合名称
-        filter: 查询条件，如 {"age": {"$gt": 18}}
-        projection: 返回字段，如 {"name": 1, "age": 1}
-        limit: 返回结果数量限制
-        skip: 跳过指定数量的结果
-        sort: 排序条件，如 {"age": 1}
+    参数说明：
+    - collection: 集合名称，默认为 None，表示使用默认集合
+    - filter: 查询条件，默认为 None，如 {"age": {"$gt": 18}}
+    - projection: 返回字段，默认为 None，如 {"name": 1, "age": 1}
+    - limit: 返回结果数量限制，默认为 None
+    - skip: 跳过指定数量的结果，默认为 None
+    - sort: 排序条件，默认为 None，如 {"age": 1}
+    
+    返回值:
+    - 成功: JSON 字符串，包含查询结果数组
+    - 未连接: "Error: Not connected"
+    - 失败: "Error: {具体错误信息}"
+    
+    示例：
+    >>> query(collection="users", filter={"age": {"$gt": 18}})
+    >>> query(collection="users", projection={"name": 1}, sort={"age": 1}, limit=10)
     """
     logger.info(f"查询参数: collection={collection}, filter={json.dumps(filter, ensure_ascii=False)}, "
                 f"projection={json.dumps(projection, ensure_ascii=False)}, limit={limit}, "
@@ -142,7 +164,7 @@ def query(
             cursor = cursor.limit(limit)
 
         result = dumps(list(cursor))
-        logger.info(f"查询结果长度: {len(result)}")
+        logger.info(f"查询结果: {result}")
         return result
     except Exception as exc:
         logger.exception("Query failed")
@@ -150,7 +172,22 @@ def query(
 
 @mcp.tool()
 def insert(collection: str = None, documents: List[Dict] = None) -> str:
-    """插入普通文档数据。用于添加非文件类型的结构化数据，如用户信息、配置信息等。"""
+    """插入普通文档数据。用于添加非文件类型的结构化数据，如用户信息、配置信息等。
+    
+    参数说明：
+    - collection: 集合名称，必填参数
+    - documents: 要插入的文档列表，必填参数，如 [{"name": "张三", "age": 18}]
+    
+    返回值:
+    - 成功: "Inserted {插入的文档数量} documents"
+    - 未连接: "Error: Not connected"
+    - 只读模式: "Error: server is read-only"
+    - 无文档: "Error: no documents provided"
+    - 失败: "Error: {具体错误信息}"
+    
+    示例：
+    >>> insert(collection="users", documents=[{"name": "张三", "age": 18}])
+    """
     logger.info(f"插入参数: collection={collection}, documents={json.dumps(documents, ensure_ascii=False)}")
     
     if not mongo_client:
@@ -174,7 +211,26 @@ def update(collection: str = None,
            update: Dict = None,
            upsert: bool = False,
            multi: bool = False) -> str:
-    """更新普通文档数据。用于修改非文件类型的结构化数据，如用户信息、配置信息等。"""
+    """更新普通文档数据。用于修改非文件类型的结构化数据，如用户信息、配置信息等。
+    
+    参数说明：
+    - collection: 集合名称，必填参数
+    - filter: 更新条件，必填参数，如 {"name": "张三"}
+    - update: 更新操作，必填参数，如 {"$set": {"age": 19}}
+    - upsert: 是否在文档不存在时插入，默认为 False
+    - multi: 是否更新多个文档，默认为 False
+    
+    返回值:
+    - 成功: "matched={匹配的文档数}, modified={修改的文档数}, upserted_id={插入的文档ID}"
+    - 未连接: "Error: Not connected"
+    - 只读模式: "Error: server is read-only"
+    - 缺少参数: "Error: filter & update required"
+    - 失败: "Error: {具体错误信息}"
+    
+    示例：
+    >>> update(collection="users", filter={"name": "张三"}, update={"$set": {"age": 19}})
+    >>> update(collection="users", filter={"age": {"$lt": 18}}, update={"$set": {"status": "未成年"}}, multi=True)
+    """
     logger.info(f"更新参数: collection={collection}, filter={json.dumps(filter, ensure_ascii=False)}, "
                 f"update={json.dumps(update, ensure_ascii=False)}, upsert={upsert}, multi={multi}")
     
@@ -200,7 +256,22 @@ def update(collection: str = None,
 
 @mcp.tool()
 def delete(collection: str = None, filter: Dict = None) -> str:
-    """删除普通文档数据。用于移除非文件类型的结构化数据，如用户信息、配置信息等。"""
+    """删除普通文档数据。用于移除非文件类型的结构化数据，如用户信息、配置信息等。
+    
+    参数说明：
+    - collection: 集合名称，必填参数
+    - filter: 删除条件，必填参数，如 {"name": "张三"}
+    
+    返回值:
+    - 成功: "Deleted {删除的文档数} documents"
+    - 未连接: "Error: Not connected"
+    - 只读模式: "Error: server is read-only"
+    - 缺少参数: "Error: filter required"
+    - 失败: "Error: {具体错误信息}"
+    
+    示例：
+    >>> delete(collection="users", filter={"name": "张三"})
+    """
     logger.info(f"删除参数: collection={collection}, filter={json.dumps(filter, ensure_ascii=False)}")
     
     if not mongo_client:
@@ -220,7 +291,21 @@ def delete(collection: str = None, filter: Dict = None) -> str:
 
 @mcp.tool()
 def aggregate(collection: str = None, pipeline: List[Dict] = None) -> str:
-    """执行聚合查询。用于对普通文档数据进行复杂的统计和分析。"""
+    """执行聚合查询。用于对普通文档数据进行复杂的统计和分析。
+    
+    参数说明：
+    - collection: 集合名称，必填参数
+    - pipeline: 聚合管道，必填参数，如 [{"$match": {"age": {"$gt": 18}}}, {"$group": {"_id": "$city", "count": {"$sum": 1}}}]
+    
+    返回值:
+    - 成功: JSON 字符串，包含聚合结果数组
+    - 未连接: "Error: Not connected"
+    - 缺少参数: "Error: pipeline required"
+    - 失败: "Error: {具体错误信息}"
+    
+    示例：
+    >>> aggregate(collection="users", pipeline=[{"$group": {"_id": "$city", "count": {"$sum": 1}}}])
+    """
     logger.info(f"聚合参数: collection={collection}, pipeline={json.dumps(pipeline, ensure_ascii=False)}")
     
     if not mongo_client:
@@ -239,7 +324,13 @@ def aggregate(collection: str = None, pipeline: List[Dict] = None) -> str:
 
 @mcp.tool()
 def status() -> str:
-    """获取当前 MongoDB 连接状态。用于检查数据库是否已连接，以及连接的具体信息。"""
+    """获取当前 MongoDB 连接状态。用于检查数据库是否已连接，以及连接的具体信息。
+    
+    返回值:
+    - 未连接: "未连接"
+    - 连接正常: "已连接 (数据库: {数据库名}, 只读模式: {是否只读})"
+    - 连接断开: "连接已断开: {具体错误信息}"
+    """
     if not mongo_client:
         return "未连接"
     
@@ -258,14 +349,24 @@ def store_file(
     metadata: Dict = None,
     collection: str = "fs"
 ) -> str:
-    """
-    将本地文件存储到 MongoDB GridFS。用于存储图片、视频等二进制文件。
+    """将本地文件存储到 MongoDB GridFS。用于存储图片、视频等二进制文件。
     
-    Args:
-        file_path: 本地文件路径，如 "./photos/image.jpg"
-        tags: 文件标签列表，如 ["风景", "旅游"]
-        metadata: 额外的元数据，如 {"location": "北京", "拍摄时间": "2024-01-01"}
-        collection: GridFS 集合名称，默认为 "fs"
+    参数说明：
+    - file_path: 本地文件路径，必填参数，如 "./photos/image.jpg"
+    - tags: 文件标签列表，默认为 None，如 ["风景", "旅游"]
+    - metadata: 额外的元数据，默认为 None，如 {"location": "北京", "拍摄时间": "2024-01-01"}
+    - collection: GridFS 集合名称，默认为 "fs"
+    
+    返回值:
+    - 成功: "文件存储成功，ID: {文件ID}"
+    - 未连接: "Error: Not connected"
+    - 只读模式: "Error: server is read-only"
+    - 文件不存在: "Error: 文件不存在: {文件路径}"
+    - 失败: "Error: {具体错误信息}"
+    
+    示例：
+    >>> store_file(file_path="./photos/image.jpg", tags=["风景", "旅游"])
+    >>> store_file(file_path="./videos/video.mp4", metadata={"拍摄时间": "2024-01-01"})
     """
     logger.info(f"存储文件参数: file_path={file_path}, tags={tags}, metadata={metadata}, collection={collection}")
     
@@ -317,18 +418,39 @@ def find_files(
     tags: List[str] = None,
     output_dir: str = "./downloads",
     collection: str = "fs",
-    limit: int = 1
+    limit: int = 1,
+    fuzzy_match: bool = False
 ) -> str:
-    """
-    查询并下载 GridFS 中的文件。用于查找和获取图片、视频等二进制文件。
+    """查询并下载 GridFS 中的文件。用于查找和获取图片、视频等二进制文件。
     
-    Args:
-        tags: 文件标签列表，如 ["风景", "旅游"]
-        output_dir: 下载文件保存的目录，默认为 "./downloads"
-        collection: GridFS 集合名称，默认为 "fs"
-        limit: 返回文件数量限制，默认为 1
+    参数说明：
+    - tags: 文件标签列表，用于筛选文件，如 ["恩恩", "2024年"]。默认为 None，表示不按标签筛选。
+      注意：只要文件包含任意一个标签就会返回，不需要全部匹配。
+    - output_dir: 下载文件保存的目录，默认为 "./downloads"。
+    - collection: GridFS 集合名称，默认为 "fs"。
+    - limit: 返回文件数量限制，默认为 1。
+    - fuzzy_match: 是否启用模糊匹配，默认为 False。如果为 True，则标签会作为正则表达式进行模糊匹配。
+      例如：标签 "2024年" 会匹配 "2024年10月21日放学" 这样的标签。
+    
+    返回值:
+    - 成功: JSON 字符串，包含文件信息数组，每个文件信息包含:
+        - file_id: 文件ID
+        - filename: 文件名
+        - local_path: 本地保存路径
+        - content_type: 文件类型
+        - upload_date: 上传时间
+        - length: 文件大小
+        - tags: 文件标签
+        - metadata: 其他元数据
+    - 未找到文件: "未找到匹配的文件"
+    - 未连接: "Error: Not connected"
+    - 失败: "Error: {具体错误信息}"
+    
+    示例：
+    >>> find_files(tags=["恩恩", "2024年"], fuzzy_match=True)  # 模糊查询包含"恩恩"和"2024年"的文件
+    >>> find_files(tags=["恩恩"], limit=5)  # 精确查询包含"恩恩"标签的前5个文件
     """
-    logger.info(f"查询文件参数: tags={tags}, output_dir={output_dir}, collection={collection}, limit={limit}")
+    logger.info(f"查询文件参数: tags={tags}, output_dir={output_dir}, collection={collection}, limit={limit}, fuzzy_match={fuzzy_match}")
     
     if not mongo_client:
         return "Error: Not connected"
@@ -341,7 +463,14 @@ def find_files(
         # 构建查询条件
         query = {}
         if tags:
-            query["metadata.tags"] = {"$all": tags}  # 从 metadata 中查询标签
+            if fuzzy_match:
+                # 使用正则表达式进行模糊匹配
+                query["metadata.tags"] = {
+                    "$in": [{"$regex": tag, "$options": "i"} for tag in tags]
+                }
+            else:
+                # 精确匹配
+                query["metadata.tags"] = {"$in": tags}
 
         files = list(mongo_client.fs.find(query).limit(limit))
         result = []
@@ -368,12 +497,13 @@ def find_files(
             }
             result.append(file_info)
             logger.info(f"文件已下载到: {output_path}")
+            logger.info(f"文件信息: {json.dumps(file_info, ensure_ascii=False, indent=2)}")
         
         if not result:
             logger.info("未找到匹配的文件")
             return "未找到匹配的文件"
             
-        logger.info(f"找到并下载了 {len(result)} 个文件")
+        logger.info(f"找到并下载了 {len(result)} 个文件，详细信息：\n{json.dumps(result, ensure_ascii=False, indent=2)}")
         return f"找到 {len(result)} 个文件：\n{dumps(result)}"
     except Exception as exc:
         logger.exception("文件查询和下载失败")
@@ -385,13 +515,30 @@ def get_file(
     output_dir: str = "./downloads",
     collection: str = "fs"
 ) -> str:
-    """
-    根据文件ID获取并下载 GridFS 中的文件。用于获取特定的图片、视频等二进制文件。
+    """根据文件ID获取并下载 GridFS 中的文件。用于获取特定的图片、视频等二进制文件。
     
-    Args:
-        file_id: 文件ID（字符串格式的 ObjectId）
-        output_dir: 下载文件保存的目录，默认为 "./downloads"
-        collection: GridFS 集合名称，默认为 "fs"
+    参数说明：
+    - file_id: 文件ID（字符串格式的 ObjectId），必填参数，用于唯一标识要获取的文件。
+    - output_dir: 下载文件保存的目录，默认为 "./downloads"。
+    - collection: GridFS 集合名称，默认为 "fs"。
+    
+    返回值:
+    - 成功: JSON 字符串，包含文件信息:
+        - file_id: 文件ID
+        - filename: 文件名
+        - local_path: 本地保存路径
+        - content_type: 文件类型
+        - upload_date: 上传时间
+        - length: 文件大小
+        - tags: 文件标签
+        - metadata: 其他元数据
+    - 未连接: "Error: Not connected"
+    - 无效ID: "Error: 无效的文件ID格式: {文件ID}"
+    - 失败: "Error: {具体错误信息}"
+    
+    示例：
+    >>> get_file(file_id="507f1f77bcf86cd799439011")  # 获取指定ID的文件
+    >>> get_file(file_id="507f1f77bcf86cd799439011", output_dir="./photos")  # 指定下载目录
     """
     logger.info(f"获取文件参数: file_id={file_id}, output_dir={output_dir}, collection={collection}")
     

@@ -2,6 +2,11 @@ from mcp.server.fastmcp import FastMCP
 import psutil  # search_rg 中会用到
 from rg_search import RGSearchParams, build_rg_command, run_command
 import logging
+from typing import List, Dict, Any
+import json
+import os
+import tempfile
+from datetime import datetime
 
 mcp = FastMCP(
     name="rg.exe File Search Service",
@@ -9,8 +14,46 @@ mcp = FastMCP(
     dependencies=["psutil"]
 )
 
+def truncate_text(text: str, max_length: int = 200) -> str:
+    """截断文本，保留关键信息"""
+    if len(text) <= max_length:
+        return text
+    return text[:max_length] + "..."
+
+def format_search_result(line: str, max_context: int = 3) -> Dict[str, Any]:
+    """格式化搜索结果，提取关键信息"""
+    parts = line.split(":", 2)
+    if len(parts) < 3:
+        return {"file": line, "line": 0, "content": line}
+    
+    file_path, line_num, content = parts
+    return {
+        "file": file_path,
+        "line": int(line_num),
+        "content": truncate_text(content.strip())
+    }
+
+def save_results_to_file(results: List[str], query: str) -> str:
+    """将搜索结果保存到临时文件"""
+    # 创建临时目录
+    temp_dir = os.path.join(tempfile.gettempdir(), "rg_search_results")
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # 生成文件名
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_query = "".join(c for c in query if c.isalnum() or c in (' ', '-', '_')).strip()
+    safe_query = safe_query[:50]  # 限制文件名长度
+    filename = f"search_results_{safe_query}_{timestamp}.txt"
+    filepath = os.path.join(temp_dir, filename)
+    
+    # 写入文件
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write("\n".join(results))
+    
+    return filepath
+
 @mcp.tool()
-def search_rg(params: dict, timeout: int = 30) -> str:
+def search_rg(params: dict, timeout: int = 30, max_results: int = 10) -> str:
     """
     使用 rg.exe 进行通用文本或文件名搜索的服务。
 
@@ -27,8 +70,7 @@ def search_rg(params: dict, timeout: int = 30) -> str:
     [关键参数说明]
     - `path`: 搜索起始路径（默认为当前目录）。若结果为空且为默认 "."，则自动遍历本地所有磁盘。
     - `query`: 待搜索的内容或文件名关键词（必填）
-      - 在“内容搜索”模式下，支持正则表达式或固定字符串
-      - 在“文件名搜索”模式下，当 `files_only=True`，则将 `query` 视为文件名的一部分（大小写敏感/不敏感依赖于 `case_sensitive` 与 `ignore_case` 设置）
+    - `max_results`: 最大返回结果数（默认10）
     - `glob`: 进一步过滤文件，类似 `-g` 参数（可使用 `["*.py", "!*.log"]` 等）
     - `ignore_case`: 是否忽略大小写（默认 True），`case_sensitive` 则强制区分大小写
     - `fixed_strings`: 是否视 `query` 为固定字符串（关闭正则解析）
@@ -39,35 +81,12 @@ def search_rg(params: dict, timeout: int = 30) -> str:
     - `threads`: 自定义搜索线程数
 
     [返回结果]
-    - 成功：返回匹配到的文本内容或文件列表（根据参数不同格式也不同）
-    - 失败：以"Error:"开头的错误描述
-    - 超时：以"Error: Operation timed out..."返回
-
-    [注意事项]
-    1. 当 `files_only=True` 时，ripgrep 默认列出所有文件；因此代码里进行了特殊处理，使之仅显示文件名中包含 `query` 的项（若需更多复杂规则，请使用 `glob` 或自行实现逻辑）。
-    2. 搜索内容时，ripgrep 可能被 `.gitignore` / `.ignore` 文件影响（可用 `no_ignore=True` 覆盖）。
-    3. 搜索系统文件/隐藏文件时，可能需要管理员权限或者显式启用 `hidden=True`。
-    4. 不支持统计空文件夹或列出目录，如需此功能应使用操作系统命令（如 `dir`、`find` 等）或文件系统 API。
-    5. 当 `path` 为 "." 且无结果时，工具会自动尝试搜索所有本地盘符，可能耗时较长。
-    6. 特殊字符（如反斜杠、正则符号）需要转义，示例：Windows 路径需写成 `"C:\\\\Users"`，正则里要写 `\\d` 代替 `\d`。
-
-    [调用示例]
-    1. 在日志文件中按正则搜索时间戳：
-       ```json
-       {
-         "query": "2023-\\d{2}-\\d{2} \\d{2}:\\d{2}",
-         "glob": ["*.log"],
-         "ignore_case": true
-       }
-       ```
-    2. 搜索包含 "rustdesk" 字样的文件名（不区分大小写），在 E 盘下：
-       ```json
-       {
-         "query": "rustdesk",
-         "path": "E:\\\\",
-         "files_only": true
-       }
-       ```
+    - 成功：返回JSON格式的结果，包含：
+      - total: 总结果数
+      - results: 结果列表，每个结果包含文件路径、行号和内容摘要
+      - truncated: 是否被截断
+      - result_file: 如果结果被截断，则包含保存完整结果的临时文件路径
+    - 失败：返回错误信息
     """
     try:
         logging.getLogger("rg_search").info("Parsing input parameters...")
@@ -77,15 +96,28 @@ def search_rg(params: dict, timeout: int = 30) -> str:
         logging.getLogger("rg_search").info("Starting search...")
         output = run_command(cmd, timeout=timeout)
 
+        # 处理结果
+        results = []
+        all_lines = output.strip().split("\n")
+        total_results = len(all_lines)
+        
+        # 只处理前 max_results 条结果
+        for line in all_lines[:max_results]:
+            results.append(format_search_result(line))
+
         # 当输出为空且路径为默认 '.' 时，尝试对所有本地盘符搜索
-        if not output.strip() and (not rg_params.path or rg_params.path.strip() == "."):
+        if not results and (not rg_params.path or rg_params.path.strip() == "."):
             logging.getLogger("rg_search").info("No result from initial search; searching all local drives...")
             drives = [p.device for p in psutil.disk_partitions() if p.fstype and p.device[0].isalpha()]
             if not drives:
                 logging.getLogger("rg_search").error("No local disks detected.")
-                return "No local disks detected."
+                return json.dumps({
+                    "total": 0,
+                    "results": [],
+                    "truncated": False,
+                    "error": "No local disks detected."
+                })
 
-            results = []
             for drive in drives:
                 if not drive.endswith("\\"):
                     drive = drive + "\\"
@@ -93,15 +125,38 @@ def search_rg(params: dict, timeout: int = 30) -> str:
                 rg_params.path = drive
                 cmd = build_rg_command(rg_params)
                 drive_output = run_command(cmd, timeout=timeout)
-                results.append(f"Drive {drive}:\n{drive_output}")
-            output = "\n".join(results)
+                drive_lines = drive_output.strip().split("\n")
+                all_lines.extend(drive_lines)
+                
+                # 添加新结果，但不超过 max_results
+                remaining = max_results - len(results)
+                if remaining <= 0:
+                    break
+                    
+                for line in drive_lines[:remaining]:
+                    results.append(format_search_result(line))
+                total_results += len(drive_lines)
+
+        # 如果结果超过限制，保存到文件
+        result_file = None
+        if total_results > max_results:
+            result_file = save_results_to_file(all_lines, params.get("query", "unknown"))
 
         logging.getLogger("rg_search").info("Search complete.")
-        return output
+        return json.dumps({
+            "total": total_results,
+            "results": results,
+            "truncated": total_results > max_results,
+            "result_file": result_file
+        })
     except Exception as ex:
         logging.getLogger("rg_search").error(f"Error during search: {str(ex)}")
-        return f"Error: {str(ex)}"
-
+        return json.dumps({
+            "total": 0,
+            "results": [],
+            "truncated": False,
+            "error": str(ex)
+        })
 
 if __name__ == "__main__":
     mcp.run()

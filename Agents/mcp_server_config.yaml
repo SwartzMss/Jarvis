@@ -2,7 +2,7 @@ servers:
   playwright:
     params:
       command: npx
-      args: ["-y", "@playwright/mcp@latest"]
+      args: ["-y", "@playwright/mcp@0.0.15"]
     cache_tools_list: true
 
   localSearch:

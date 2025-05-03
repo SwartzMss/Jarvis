@@ -17,6 +17,7 @@ class AgentLifecycleHooks(AgentHooks):
 
     async def on_tool_start(self, context: RunContextWrapper, agent: Agent, tool: Tool) -> bool:
         """工具开始执行时的钩子"""
+        # 打印工具名
         print(f"[{agent.name}] 开始执行 {tool.name} @ {self._get_time_str()}")
         return True
 

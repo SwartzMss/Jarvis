@@ -113,16 +113,20 @@ def open_file(path: str) -> str:
 @mcp.tool()
 def close_file(process_id: int) -> str:
     """
-    关闭通过 open_file 打开的窗口。
+    直接关闭指定进程ID的文件窗口。当用户要求关闭文件窗口时，应该直接调用此函数。
     
     参数：
-      - process_id: 进程ID（从 open_file 返回的 process_id）
+      - process_id: 要关闭的窗口对应的进程ID（通常是从 open_file 返回的 process_id）
     
     返回：
       JSON格式的响应，包含：
       - success: 是否成功
       - message: 操作结果或错误信息
-      - process_id: 进程ID
+      - process_id: 被关闭的进程ID
+    
+    注意：
+      - 此函数会直接执行关闭操作，不需要额外的确认
+      - 如果进程ID无效或窗口已关闭，会返回相应的错误信息
     """
     logger.info(f"开始关闭进程: process_id={process_id}")
     try:

@@ -15,8 +15,8 @@ async def create_fileviewer_agent():
         name="FileViewer",
         instructions="""你是一个文件查看助手，可以帮助用户使用系统默认程序打开和查看各种类型的文件。
         你可以：
-        1. 使用系统默认程序打开文件
-        2. 关闭已打开的文件窗口
+        1. 使用系统默认程序打开文件，使用open_file工具
+        2. 关闭已打开的文件窗口，使用close_file工具
         3. 支持的文件类型包括：
            - 文本文件（.txt, .md, .py等）
            - 图片文件（.jpg, .png, .gif等）

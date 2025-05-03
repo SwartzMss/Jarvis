@@ -10,6 +10,7 @@ import json
 from gridfs import GridFS
 from datetime import datetime
 from bson import ObjectId
+import re
 
 # ---------------------------------------------------------------------------
 # 日志：全部写到 stderr / 文件，严禁写到 stdout
@@ -465,39 +466,73 @@ def find_files(
         if tags:
             if fuzzy_match:
                 # 使用正则表达式进行模糊匹配
-                query["metadata.tags"] = {
-                    "$in": [{"$regex": tag, "$options": "i"} for tag in tags]
+                regex_patterns = [f".*{re.escape(tag)}.*" for tag in tags]
+                regex_pattern = "|".join(regex_patterns)
+                logger.info(f"使用正则表达式模式: {regex_pattern}")
+                query["tags"] = {
+                    "$regex": regex_pattern,
+                    "$options": "i"
                 }
             else:
                 # 精确匹配
-                query["metadata.tags"] = {"$in": tags}
-
-        files = list(mongo_client.fs.find(query).limit(limit))
+                query["tags"] = {"$in": tags}
+        
+        logger.info(f"最终查询条件: {json.dumps(query, ensure_ascii=False)}")
+        
+        # 先检查文件数量
+        count = mongo_client._db()['fs.files'].count_documents(query)
+        logger.info(f"找到 {count} 个匹配的文件")
+        
+        # 如果没有找到文件，检查数据库中是否有任何文件
+        if count == 0:
+            total_files = mongo_client._db()['fs.files'].count_documents({})
+            logger.info(f"数据库中总共有 {total_files} 个文件")
+            if total_files > 0:
+                # 获取一个文件样本，查看其标签结构
+                sample_file = mongo_client._db()['fs.files'].find_one()
+                if sample_file:
+                    logger.info(f"文件样本的标签结构: {json.dumps(sample_file.get('tags', []), ensure_ascii=False)}")
+                    # 获取所有不同的标签
+                    all_tags = mongo_client._db()['fs.files'].distinct('tags')
+                    logger.info(f"数据库中所有的标签: {json.dumps(all_tags, ensure_ascii=False)}")
+                    # 查找相似的标签
+                    for tag in tags:
+                        similar_tags = [t for t in all_tags if tag in t]
+                        if similar_tags:
+                            logger.info(f"与标签 '{tag}' 相似的标签: {json.dumps(similar_tags, ensure_ascii=False)}")
+            return "未找到匹配的文件"
+        
+        # 获取文件列表
+        files = list(mongo_client._db()['fs.files'].find(query).limit(limit))
         result = []
         
-        for file in files:
+        for file_info in files:
+            file_id = file_info['_id']
+            # 获取文件内容
+            grid_out = mongo_client.fs.get(file_id)
+            
             # 生成输出文件路径（使用绝对路径）
-            output_path = os.path.abspath(os.path.join(output_dir, f"{file._id}_{file.filename}"))
+            output_path = os.path.abspath(os.path.join(output_dir, f"{file_id}_{file_info['filename']}"))
             
             # 下载文件
             with open(output_path, 'wb') as f:
-                f.write(file.read())
+                f.write(grid_out.read())
             
             # 记录文件信息
-            file_info = {
-                "file_id": str(file._id),
-                "filename": file.filename,
+            file_info_dict = {
+                "file_id": str(file_id),
+                "filename": file_info['filename'],
                 "local_path": output_path,  # 使用绝对路径
-                "content_type": file.content_type,
-                "upload_date": file.upload_date.isoformat(),
-                "length": file.length,
-                "tags": file.metadata.get("tags", []) if file.metadata else [],  # 从 metadata 中获取标签
-                "metadata": {k: v for k, v in (file.metadata or {}).items() 
-                           if k not in ['filename', 'contentType', 'uploadDate', 'tags']}
+                "content_type": file_info['contentType'],
+                "upload_date": file_info['uploadDate'].isoformat(),
+                "length": file_info['length'],
+                "tags": file_info.get('tags', []),
+                "metadata": {k: v for k, v in file_info.items() 
+                           if k not in ['_id', 'filename', 'contentType', 'uploadDate', 'length', 'tags', 'chunkSize']}
             }
-            result.append(file_info)
+            result.append(file_info_dict)
             logger.info(f"文件已下载到: {output_path}")
-            logger.info(f"文件信息: {json.dumps(file_info, ensure_ascii=False, indent=2)}")
+            logger.info(f"文件信息: {json.dumps(file_info_dict, ensure_ascii=False, indent=2)}")
         
         if not result:
             logger.info("未找到匹配的文件")

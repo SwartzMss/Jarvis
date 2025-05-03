@@ -9,4 +9,5 @@ dependencies = [
     "mcp[cli]>=1.6.0",
     "pathlib>=1.0.1",
     "psutil>=7.0.0",
+    "pywin32>=310",
 ]

@@ -9,6 +9,7 @@ from browser_agent import browser_tool
 from local_search_agent import local_search_tool
 from filesystem_agent import filesystem_tool
 from mongodb_agent import mongodb_tool
+from fileviewer_agent import fileviewer_tool
 
 async def create_dispatcher_agent():
     # 获取所有工具
@@ -16,7 +17,8 @@ async def create_dispatcher_agent():
         await local_search_tool.get_tool(),
         await browser_tool.get_tool(),
         await filesystem_tool.get_tool(),
-        await mongodb_tool.get_tool()
+        await mongodb_tool.get_tool(),
+        await fileviewer_tool.get_tool()
     ]
 
     agent = Agent(

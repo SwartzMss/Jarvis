@@ -2,6 +2,7 @@ from typing import Dict, List, Optional
 import yaml
 from pathlib import Path
 from agents.mcp import MCPServerStdio, MCPUtil
+import asyncio
 
 class MCPServerManager:
     def __init__(self):
@@ -95,10 +96,22 @@ class MCPServerManager:
         for name, server in list(self._servers.items()):
             try:
                 print(f"[MCP Manager] 正在关闭 {name} server...")
-                await server.cleanup()
+                try:
+                    await server.cleanup()
+                except Exception as e:
+                    print(f"[MCP Manager] ✗ 关闭 {name} server 时出错: {e}")
+                    # 尝试强制终止进程
+                    if hasattr(server, 'process') and server.process:
+                        try:
+                            server.process.terminate()
+                            await asyncio.sleep(1)  # 给进程一些时间终止
+                            if server.process.poll() is None:  # 如果进程还在运行
+                                server.process.kill()  # 强制终止
+                        except Exception as e:
+                            print(f"[MCP Manager] ✗ 强制终止 {name} server 进程时出错: {e}")
                 print(f"[MCP Manager] ✓ {name} server 已关闭")
             except Exception as e:
-                print(f"[MCP Manager] ✗ 关闭 {name} server 时出错: {e}")
+                print(f"[MCP Manager] ✗ 处理 {name} server 关闭时出错: {e}")
             finally:
                 if name in self._servers:
                     del self._servers[name]

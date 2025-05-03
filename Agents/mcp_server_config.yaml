@@ -12,9 +12,15 @@ servers:
     cache_tools_list: true
 
   filesystem:
+      params:
+        command: uv
+        args: ["run", "--directory", "../MCP/filesystem", "main.py"]
+      cache_tools_list: true
+
+  fileviewer:
     params:
       command: uv
-      args: ["run", "--directory", "../MCP/filesystem", "main.py"]
+      args: ["run", "--directory", "../MCP/fileviewer", "main.py"]
     cache_tools_list: true
 
   mongodb:

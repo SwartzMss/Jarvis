@@ -32,6 +32,7 @@ async def create_dispatcher_agent():
             2. 交互方式：
             - 主动询问：当信息不完整时，主动询问用户以获取更多细节
             - 分步指导：对于复杂任务，提供分步骤的指导
+            - 简洁回复：保持回复简洁明了，避免冗长
         """,
         model=model_provider.get_model(MODEL_NAME),
         model_settings=ModelSettings(temperature=0.3, top_p=0.9),

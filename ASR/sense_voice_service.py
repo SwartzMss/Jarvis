@@ -5,9 +5,10 @@ import torch
 import numpy as np
 from logger_config import logger
 from tools.model_downloader import ModelDownloader
+from config import ASR_CONFIG
 
 class SenseVoiceService:
-    def __init__(self):
+    def __init__(self, model_path=None, sample_rate=None, language=None):
         """Initialize speech recognition service with automatic device, model directory and buffer configuration"""
         logger.info("Initializing SenseVoice service...")
         
@@ -21,7 +22,7 @@ class SenseVoiceService:
 
         # Model directory - fixed location
         root = Path(__file__).parent
-        self.model_dir = root / "models" / "SenseVoiceSmall"
+        self.model_dir = Path(model_path or ASR_CONFIG["model_path"])
         logger.info(f"Model directory: {self.model_dir}")
         
         # Ensure model directory exists
@@ -36,7 +37,8 @@ class SenseVoiceService:
         logger.info("Model file download completed")
 
         # Buffer parameters - fixed configuration
-        self.sample_rate = 16000
+        self.sample_rate = sample_rate or ASR_CONFIG["sample_rate"]
+        self.language = language or ASR_CONFIG["language"]
         self.buffer_duration = 0.5  # Reduce buffer duration to 0.5 seconds
         self._buffer = []  # list of numpy arrays
         self._buffer_samples = 0
@@ -60,7 +62,19 @@ class SenseVoiceService:
             logger.error(f"Model initialization failed: {e}")
             raise
 
-    def transcribe(self, audio_data, language="auto", use_itn=True):
+    def recognize(self, audio_data):
+        """Recognize speech from audio data"""
+        try:
+            result = self.transcribe(audio_data, language=self.language)
+            if "error" in result:
+                logger.error(f"Recognition error: {result['error']}")
+                return None
+            return result["text"]
+        except Exception as e:
+            logger.error(f"Recognition error: {str(e)}")
+            return None
+
+    def transcribe(self, audio_data, language=None, use_itn=True):
         """Transcribe audio data"""
         logger.debug(f"Received audio data: {audio_data.shape}")
         
@@ -87,7 +101,7 @@ class SenseVoiceService:
             res = self.model.generate(
                 input=tensor,
                 cache={},
-                language=language,
+                language=language or self.language,
                 use_itn=use_itn,
                 merge_vad=False,
                 merge_length_s=self.buffer_duration
@@ -97,3 +111,12 @@ class SenseVoiceService:
         except Exception as e:
             logger.error(f"Inference error: {e}")
             return {"error": str(e)}
+
+    def close(self):
+        """Release resources"""
+        try:
+            if hasattr(self, 'model'):
+                del self.model
+            logger.info("SenseVoice service resources released")
+        except Exception as e:
+            logger.error(f"Error releasing resources: {str(e)}")

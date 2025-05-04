@@ -6,6 +6,7 @@ import librosa
 import webrtcvad
 from logger_config import logger
 from sense_voice_service import SenseVoiceService
+from config import AUDIO_CONFIG, VAD_CONFIG, SPEECH_CONFIG, ASR_CONFIG
 
 class VoiceInput:
     """
@@ -24,39 +25,39 @@ class VoiceInput:
         self.channels = dev_info['max_input_channels']
 
         # Target format settings
-        self.target_rate = 16000  # Model expected sample rate
-        self.mix_channels = True  # Whether to mix multi-channel audio to mono
-        self.lib_resample = True  # Whether to use librosa resampling
-        self.chunk_duration = 0.1  # Processing duration 0.1 seconds
+        self.target_rate = AUDIO_CONFIG["target_rate"]
+        self.mix_channels = AUDIO_CONFIG["mix_channels"]
+        self.lib_resample = AUDIO_CONFIG["lib_resample"]
+        self.chunk_duration = AUDIO_CONFIG["chunk_duration"]
         self.chunk_frames = int(self.chunk_duration * self.target_rate)
 
         # VAD configuration
-        self.vad_aggressiveness = 0  # Lower VAD sensitivity, range 0-3, 0 least sensitive
-        self.vad_frame_duration = 30  # VAD frame length in milliseconds
+        self.vad_aggressiveness = VAD_CONFIG["aggressiveness"]
+        self.vad_frame_duration = VAD_CONFIG["frame_duration"]
         self.vad = webrtcvad.Vad(self.vad_aggressiveness)
         self.vad_frame_size = int(self.target_rate * self.vad_frame_duration / 1000)
-        self.vad_buffer = np.zeros((0,), dtype=np.float32)  # Buffer for VAD detection
-        self.vad_buffer_duration = 0.5  # Increase VAD buffer duration to 0.5 seconds
+        self.vad_buffer = np.zeros((0,), dtype=np.float32)
+        self.vad_buffer_duration = VAD_CONFIG["buffer_duration"]
         self.vad_buffer_size = int(self.vad_buffer_duration * self.target_rate)
         
         # Chinese speech feature detection configuration
-        self.min_volume = 0.02  # Minimum volume threshold
-        self.max_volume = 0.5   # Maximum volume threshold
-        self.min_freq = 100     # Minimum frequency threshold (Hz)
-        self.max_freq = 1000    # Maximum frequency threshold (Hz)
+        self.min_volume = SPEECH_CONFIG["min_volume"]
+        self.max_volume = SPEECH_CONFIG["max_volume"]
+        self.min_freq = SPEECH_CONFIG["min_freq"]
+        self.max_freq = SPEECH_CONFIG["max_freq"]
         
         # Speech buffer configuration
-        self.speech_buffer = np.zeros((0,), dtype=np.float32)  # For accumulating speech segments
-        self.is_speaking = False  # Whether currently speaking
-        self.silence_frames = 0  # Continuous silence frame count
-        self.max_silence_frames = 10  # Increase maximum allowed continuous silence frames
-        self.min_speech_frames = 3  # Minimum required continuous speech frames
+        self.speech_buffer = np.zeros((0,), dtype=np.float32)
+        self.is_speaking = False
+        self.silence_frames = 0
+        self.max_silence_frames = SPEECH_CONFIG["max_silence_frames"]
+        self.min_speech_frames = SPEECH_CONFIG["min_speech_frames"]
         
         logger.debug(f"VAD configuration - Sensitivity: {self.vad_aggressiveness}, Frame size: {self.vad_frame_size}, Buffer size: {self.vad_buffer_size}")
 
         # Buffer and queue
-        self.audio_queue = queue.Queue()  # For storing audio data to be processed
-        self.transcribe_queue = queue.Queue()  # For storing audio data to be transcribed
+        self.audio_queue = queue.Queue()
+        self.transcribe_queue = queue.Queue()
 
         # Recording state
         self.recording = False

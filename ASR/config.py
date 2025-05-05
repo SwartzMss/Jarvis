@@ -10,8 +10,8 @@ ROOT_DIR = Path(__file__).parent
 
 # Picovoice配置
 PICOVOICE_ACCESS_KEY = os.getenv('PICOVOICE_ACCESS_KEY', '')
-WAKE_WORD = os.getenv('WAKE_WORD', 'jarvis')
-CUSTOM_WAKE_WORD_MODEL_PATH = os.getenv('CUSTOM_WAKE_WORD_MODEL_PATH', '')
+WAKE_WORD = 'jarvis'
+CUSTOM_WAKE_WORD_MODEL_PATH = None
 
 # 音频配置
 SAMPLE_RATE = 16000  # 采样率
@@ -19,7 +19,7 @@ CHANNELS = 1  # 声道数
 CHUNK_SIZE = 1024  # 每次读取的音频块大小
 
 # 日志配置
-LOG_LEVEL = "DEBUG"  # 日志级别
+LOG_LEVEL = "INFO"  # 日志级别
 LOG_FILE = ROOT_DIR / "logs" / "asr.log"  # 日志文件路径
 
 # 确保日志目录存在

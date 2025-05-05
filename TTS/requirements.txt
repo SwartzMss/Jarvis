@@ -1,0 +1,4 @@
+edge-tts>=6.1.0
+simpleaudio>=1.0.4
+pydub>=0.25.1
+simpleaudio>=1.0.4

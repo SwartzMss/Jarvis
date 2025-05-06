@@ -12,7 +12,7 @@ class ModelDownloadError(Exception):
     """模型下载异常"""
     pass
 
-def retry(max_retries=3, delay=1):
+def retry(max_retries=3, delay=5):
     """重试装饰器
     
     Args:
@@ -54,9 +54,9 @@ class ModelDownloader:
         self.model_path.mkdir(parents=True, exist_ok=True)
         print(f"模型根目录: {self.model_path}")
         
-    @retry(max_retries=3, delay=2)
+    @retry(max_retries=3, delay=5)
     def download_file(self, url, filename, model_name):
-        """下载文件到models目录下的模型子目录
+        """下载文件到models目录下的模型子目录，支持断点续传
         
         Args:
             url: 下载链接
@@ -88,33 +88,39 @@ class ModelDownloader:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
             
-            # 发起请求
-            response = requests.get(url, stream=True, headers=headers, timeout=30)
+            # 获取已下载的文件大小
+            first_byte = target_path.stat().st_size if target_path.exists() else 0
+            if first_byte > 0:
+                print(f"检测到未完成的下载，从 {first_byte} 字节处继续")
+                headers['Range'] = f'bytes={first_byte}-'
+            
+            # 发起请求，增加超时时间
+            response = requests.get(url, stream=True, headers=headers, timeout=60)
             response.raise_for_status()
             
             # 获取文件大小
-            total_size = int(response.headers.get('content-length', 0))
+            total_size = int(response.headers.get('content-length', 0)) + first_byte
             
             # 使用tqdm显示下载进度
-            with open(target_path, 'wb') as f, tqdm(
+            with open(target_path, 'ab' if first_byte > 0 else 'wb') as f, tqdm(
                 desc=filename,
                 total=total_size,
+                initial=first_byte,
                 unit='iB',
                 unit_scale=True,
                 unit_divisor=1024,
             ) as pbar:
-                for data in response.iter_content(chunk_size=1024):
-                    size = f.write(data)
-                    pbar.update(size)
+                for data in response.iter_content(chunk_size=8192):  # 增加chunk大小
+                    if data:
+                        size = f.write(data)
+                        pbar.update(size)
             
             print(f"✓ 文件 {filename} 下载完成")
             return True
             
         except Exception as e:
             print(f"✗ 下载 {filename} 时发生错误: {str(e)}")
-            # 删除可能下载了一半的文件
-            if target_path.exists():
-                target_path.unlink()
+            # 不再删除未完成的文件，以支持断点续传
             raise ModelDownloadError(f"下载文件 {filename} 失败: {str(e)}")
     
     def download_sense_voice_model(self):

@@ -12,7 +12,7 @@ from config import (
 from tts_client import tts_client
 
 class WakeWordDetector:
-    def __init__(self, sensitivity: float = 0.8):
+    def __init__(self, sensitivity: float = 0.6):
         """初始化 Porcupine + PyAudio，并做好重采样准备"""
         # 获取当前运行的事件循环
         self.loop = asyncio.get_running_loop()
@@ -111,12 +111,12 @@ class WakeWordDetector:
             if self.porcupine.process(audio_data) >= 0:
                 logger.info(f"⚡ 检测到唤醒词: {WAKE_WORD}")
                 # 播放提示音
-                if self.current_tts_task is None or self.current_tts_task.done():
-                    # 使用call_soon_threadsafe将任务安全地提交到主事件循环
-                    self.loop.call_soon_threadsafe(
-                        lambda: self._schedule_tts("主人，有啥吩咐")
-                    )
-                    logger.info("已创建新的TTS播放任务")
+                #if self.current_tts_task is None or self.current_tts_task.done():
+                 #   # 使用call_soon_threadsafe将任务安全地提交到主事件循环
+                 #   self.loop.call_soon_threadsafe(
+                 #       lambda: self._schedule_tts("主人，有啥吩咐")
+                 #   )
+                 #   logger.info("已创建新的TTS播放任务")
 
             return (in_data, pyaudio.paContinue)
 

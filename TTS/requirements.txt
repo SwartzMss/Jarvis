@@ -1,6 +1,0 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-edge-tts==7.0.2
-miniaudio==1.57
-simpleaudio==1.0.4
-pydantic==2.4.2

@@ -44,6 +44,13 @@ class AgentLifecycleHooks(Generic[TContext]):
             source: 源 Agent
         """
         print(f"[{source.name}] 将任务交给 {agent.name} @ {self._get_time_str()}")
+        
+        # 从上下文中获取会话实例并切换 agent
+        try:
+            if session := context.context:             
+                await session.handoff_to(agent)     
+        except Exception as e:
+            print(f"切换 agent 时出错: {str(e)}")
 
     async def on_end(self, context: RunContextWrapper, agent: Agent, output: Any) -> None:
         print(f"[{agent.name}] 运行结束 @ {self._get_time_str()}, 输出: {output}")

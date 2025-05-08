@@ -1,20 +1,22 @@
 import asyncio
-from agents import Runner, TResponseInputItem
+from agents import Runner, TResponseInputItem, Agent
 from dispatcher_agent import create_dispatcher_agent
 from mcp_server_manager import mcp_server_manager
 
 class ChatSession:
     def __init__(self):
-        self.dispatcher_agent = None
-        self.inputs = []
         self._initialized = False
-        
+        self.inputs = []
+        self.dispatcher_agent = None
+        self.current_agent = None  # 当前活跃的 agent
+
     async def initialize(self):
         """初始化会话"""
         if not self._initialized:
             # 确保 MCP server 已初始化
             await mcp_server_manager.initialize_servers()
             self.dispatcher_agent = await create_dispatcher_agent()
+            self.current_agent = self.dispatcher_agent  # 初始时使用 dispatcher
             self._initialized = True
         
     async def process_message(self, message: str) -> str:
@@ -28,7 +30,8 @@ class ChatSession:
         self.inputs.append({"role": "user", "content": message})
         
         try:
-            result = await Runner.run(self.dispatcher_agent, self.inputs)
+            # 使用当前活跃的 agent 处理消息
+            result = await Runner.run(self.current_agent, self.inputs, context=self)
             self.inputs = result.to_input_list()
             
             # 格式化响应
@@ -53,4 +56,9 @@ class ChatSession:
             finally:
                 self._initialized = False
                 self.dispatcher_agent = None
-                self.inputs = [] 
+                self.inputs = []
+
+    async def handoff_to(self, agent: Agent):
+        """切换到指定的 agent"""
+        self.current_agent = agent
+        print(f"已切换到 {agent.name} 处理后续消息") 

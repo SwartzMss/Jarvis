@@ -1,9 +1,11 @@
 import time
 from datetime import datetime
 from agents import AgentHooks, RunContextWrapper, Agent,Tool
-from typing import Any
+from typing import Any, TypeVar, Generic
 
-class AgentLifecycleHooks(AgentHooks):
+TContext = TypeVar('TContext')
+
+class AgentLifecycleHooks(Generic[TContext]):
     def __init__(self, max_chars: int = 50000, max_turns: int = 10):
         self.max_chars = max_chars
         self.max_turns = max_turns
@@ -29,9 +31,19 @@ class AgentLifecycleHooks(AgentHooks):
         return True
 
     async def on_handoff(
-        self, context: RunContextWrapper, from_agent: Agent, to_agent: Agent
+        self,
+        context: RunContextWrapper[TContext],
+        agent: Agent[TContext],
+        source: Agent[TContext],
     ) -> None:
-        print(f"[{from_agent.name}] 将任务交给 {to_agent.name} @ {self._get_time_str()}")
+        """处理消息转交时的钩子
+        
+        参数：
+            context: 运行上下文
+            agent: 目标 Agent
+            source: 源 Agent
+        """
+        print(f"[{source.name}] 将任务交给 {agent.name} @ {self._get_time_str()}")
 
     async def on_end(self, context: RunContextWrapper, agent: Agent, output: Any) -> None:
         print(f"[{agent.name}] 运行结束 @ {self._get_time_str()}, 输出: {output}")

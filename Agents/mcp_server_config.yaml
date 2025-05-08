@@ -23,6 +23,12 @@ servers:
       args: ["run", "--directory", "../MCP/fileviewer", "main.py"]
     cache_tools_list: true
 
+  excel:
+    params:
+      command: uv
+      args: ["run", "--directory", "../MCP/excel", "main.py"]
+    cache_tools_list: true
+
   mongodb:
     params:
       command: uv

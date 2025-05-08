@@ -10,6 +10,7 @@ from local_search_agent import local_search_tool
 from filesystem_agent import filesystem_tool
 from mongodb_agent import mongodb_tool
 from fileviewer_agent import fileviewer_tool
+from excel_agent import create_excel_agent
 
 async def create_dispatcher_agent():
     # 获取所有工具
@@ -18,8 +19,10 @@ async def create_dispatcher_agent():
         await browser_tool.get_tool(),
         await filesystem_tool.get_tool(),
         await mongodb_tool.get_tool(),
-        await fileviewer_tool.get_tool()
+        await fileviewer_tool.get_tool(),
     ]
+
+    excel_agent = create_excel_agent()
 
     agent = Agent(
         name="AI Assistant",
@@ -37,6 +40,7 @@ async def create_dispatcher_agent():
         model=model_provider.get_model(MODEL_NAME),
         model_settings=ModelSettings(temperature=0.3, top_p=0.9),
         hooks=default_hooks,
+        handoffs=[excel_agent],
         tools=tools,
     )
     return agent

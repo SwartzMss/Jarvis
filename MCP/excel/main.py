@@ -48,12 +48,13 @@ class ExcelManager:
         self.charts: Dict[str, Any] = {}     # chart_id -> chart
         self.pivots: Dict[str, Any] = {}     # pivot_id -> pivot
 
-    def initialize(self) -> None:
+    def initialize(self, visible: bool = True) -> None:
         """初始化 Excel 应用程序"""
         try:
             if not self.app:
                 pythoncom.CoInitialize()
                 self.app = win32com.client.Dispatch("Excel.Application")
+                self.app.Visible = visible
                 logger.info("Excel 应用程序初始化成功")
         except Exception as e:
             logger.error(f"Excel 应用程序初始化失败: {str(e)}")
@@ -81,38 +82,22 @@ excel_manager = ExcelManager()
 # ---------------------------------------------------------------------------
 # MCP 工具函数
 # ---------------------------------------------------------------------------
-@server.tool()
-def initialize_excel(visible: bool = False) -> Dict[str, str]:
-    """初始化 Excel 应用程序
-    
-    参数：
-        visible: 是否可见，默认为 False
-    
-    返回：
-        {"status": "ok"} 或 {"error": "错误信息"}
-    """
-    try:
-        excel_manager.initialize()
-        excel_manager.app.Visible = visible
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"初始化 Excel 失败: {str(e)}")
-        return {"error": str(e)}
 
 @server.tool()
-def new_workbook(file_path: str, visible: bool = False) -> Dict[str, str]:
+def new_workbook(file_path: str, visible: bool = True) -> Dict[str, str]:
     """创建新的 Excel 文件
     
     参数：
-        file_path: Excel 文件保存路径，如 "C:\\Documents\\新建工作簿.xlsx"
-        visible: 是否可见，默认为 False
+        file_path: Excel 文件保存路径，如 "C:\\Users\\用户名\\Documents\\新建工作簿.xlsx"
+        visible: 是否可见，默认为 True
     
     返回：
         {"book_id": "工作簿ID"} 或 {"error": "错误信息"}
     """
+    logger.info(f"创建新工作簿 - 参数: file_path={file_path}, visible={visible}")
     try:
-        if not excel_manager.app:
-            return {"error": "Excel 应用程序未初始化"}
+        # 自动初始化
+        excel_manager.initialize(visible)
         
         # 确保文件路径使用正确的 Windows 格式
         file_path = file_path.replace("/", "\\")
@@ -121,8 +106,8 @@ def new_workbook(file_path: str, visible: bool = False) -> Dict[str, str]:
         directory = os.path.dirname(file_path)
         if directory and not os.path.exists(directory):
             os.makedirs(directory)
+            logger.debug(f"创建目录: {directory}")
         
-        excel_manager.app.Visible = visible
         workbook = excel_manager.app.Workbooks.Add()
         
         # 保存文件
@@ -130,30 +115,32 @@ def new_workbook(file_path: str, visible: bool = False) -> Dict[str, str]:
         
         book_id = str(uuid.uuid4())
         excel_manager.workbooks[book_id] = workbook
+        logger.info(f"创建新工作簿成功 - book_id={book_id}, file_path={file_path}")
         return {"book_id": book_id}
     except Exception as e:
-        logger.error(f"创建新 Excel 文件失败: {str(e)}")
+        logger.error(f"创建新工作簿失败: {str(e)}")
         return {"error": str(e)}
 
 @server.tool()
-def open_workbook(path: str, visible: bool = False) -> Dict[str, str]:
+def open_workbook(path: str, visible: bool = True) -> Dict[str, str]:
     """打开工作簿
     
     参数：
         path: Excel 文件路径
-        visible: 是否可见，默认为 False
+        visible: 是否可见，默认为 True
     
     返回：
         {"book_id": "工作簿ID"} 或 {"error": "错误信息"}
     """
+    logger.info(f"打开工作簿 - 参数: path={path}, visible={visible}")
     try:
-        if not excel_manager.app:
-            return {"error": "Excel 应用程序未初始化"}
+        # 自动初始化
+        excel_manager.initialize(visible)
         
-        excel_manager.app.Visible = visible
         workbook = excel_manager.app.Workbooks.Open(path)
         book_id = str(uuid.uuid4())
         excel_manager.workbooks[book_id] = workbook
+        logger.info(f"打开工作簿成功 - book_id={book_id}, path={path}")
         return {"book_id": book_id}
     except Exception as e:
         logger.error(f"打开工作簿失败: {str(e)}")
@@ -170,17 +157,22 @@ def close_workbook(book_id: str, save: bool = True) -> Dict[str, str]:
     返回：
         {"status": "ok"} 或 {"error": "错误信息"}
     """
+    logger.info(f"关闭工作簿 - 参数: book_id={book_id}, save={save}")
     try:
         if not excel_manager.app:
+            logger.error("Excel 应用程序未初始化")
             return {"error": "Excel 应用程序未初始化"}
         
         if book_id in excel_manager.workbooks:
             workbook = excel_manager.workbooks[book_id]
             if save:
                 workbook.Save()
+                logger.debug(f"保存工作簿: book_id={book_id}")
             workbook.Close()
             del excel_manager.workbooks[book_id]
+            logger.info(f"关闭工作簿成功 - book_id={book_id}")
             return {"status": "ok"}
+        logger.error(f"未找到工作簿: book_id={book_id}")
         return {"error": f"未找到工作簿 ID: {book_id}"}
     except Exception as e:
         logger.error(f"关闭工作簿失败: {str(e)}")
@@ -199,8 +191,10 @@ def write_range(book_id: str, sheet: str, address: str, data: List[List]) -> Dic
     返回：
         {"status": "ok"} 或 {"error": "错误信息"}
     """
+    logger.info(f"写入单元格范围 - 参数: book_id={book_id}, sheet={sheet}, address={address}, data_size={len(data)}")
     try:
         if not excel_manager.app:
+            logger.error("Excel 应用程序未初始化")
             return {"error": "Excel 应用程序未初始化"}
         
         if book_id in excel_manager.workbooks:
@@ -211,7 +205,9 @@ def write_range(book_id: str, sheet: str, address: str, data: List[List]) -> Dic
             for i, row in enumerate(data):
                 for j, value in enumerate(row):
                     range_obj.Cells(i + 1, j + 1).Value = value
+            logger.info(f"写入单元格范围成功 - book_id={book_id}, sheet={sheet}, address={address}")
             return {"status": "ok"}
+        logger.error(f"未找到工作簿: book_id={book_id}")
         return {"error": f"未找到工作簿 ID: {book_id}"}
     except Exception as e:
         logger.error(f"写入单元格范围失败: {str(e)}")
@@ -229,8 +225,10 @@ def read_range(book_id: str, sheet: str, address: Optional[str] = None) -> Dict[
     返回：
         {"data": [[单元格值]]} 或 {"error": "错误信息"}
     """
+    logger.info(f"读取单元格范围 - 参数: book_id={book_id}, sheet={sheet}, address={address}")
     try:
         if not excel_manager.app:
+            logger.error("Excel 应用程序未初始化")
             return {"error": "Excel 应用程序未初始化"}
         
         if book_id in excel_manager.workbooks:
@@ -247,7 +245,9 @@ def read_range(book_id: str, sheet: str, address: Optional[str] = None) -> Dict[
                 for cell in row.Cells:
                     row_data.append(cell.Value)
                 data.append(row_data)
+            logger.info(f"读取单元格范围成功 - book_id={book_id}, sheet={sheet}, address={address}, data_size={len(data)}")
             return {"data": data}
+        logger.error(f"未找到工作簿: book_id={book_id}")
         return {"error": f"未找到工作簿 ID: {book_id}"}
     except Exception as e:
         logger.error(f"读取单元格范围失败: {str(e)}")

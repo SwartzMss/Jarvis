@@ -28,8 +28,12 @@ class ChatSession:
             return "请输入有效消息"
             
         self.inputs.append({"role": "user", "content": message})
-        
+            
         try:
+            if self.current_agent is not self.dispatcher_agent:
+                # 如果还没加过，就 append 一次
+                if self.dispatcher_agent not in self.current_agent.handoffs:
+                    self.current_agent.handoffs.append(self.dispatcher_agent)
             # 使用当前活跃的 agent 处理消息
             result = await Runner.run(self.current_agent, self.inputs, context=self)
             self.inputs = result.to_input_list()

@@ -48,7 +48,7 @@ class ExcelManager:
         self.charts: Dict[str, Any] = {}     # chart_id -> chart
         self.pivots: Dict[str, Any] = {}     # pivot_id -> pivot
 
-    def initialize(self, visible: bool = True) -> None:
+    def initialize(self, visible: bool = False) -> None:
         """初始化 Excel 应用程序"""
         try:
             if not self.app:
@@ -97,7 +97,7 @@ def new_workbook(file_path: str, visible: bool = True) -> Dict[str, str]:
     logger.info(f"创建新工作簿 - 参数: file_path={file_path}, visible={visible}")
     try:
         # 自动初始化
-        excel_manager.initialize(visible)
+        excel_manager.initialize()
         
         # 确保文件路径使用正确的 Windows 格式
         file_path = file_path.replace("/", "\\")
@@ -135,7 +135,7 @@ def open_workbook(path: str, visible: bool = True) -> Dict[str, str]:
     logger.info(f"打开工作簿 - 参数: path={path}, visible={visible}")
     try:
         # 自动初始化
-        excel_manager.initialize(visible)
+        excel_manager.initialize()
         
         workbook = excel_manager.app.Workbooks.Open(path)
         book_id = str(uuid.uuid4())

@@ -105,7 +105,7 @@ class AudioInput:
             
             # 检查音频数据是否有效（降低阈值到10）
             if max_amplitude < 10:  # 降低阈值
-                #logger.debug(f"音频数据幅度太小 (最大绝对值: {max_amplitude:.2f})，可能是静音")
+                logger.debug(f"音频数据幅度太小 (最大绝对值: {max_amplitude:.2f})，可能是静音")
                 return
             
             # 2. 确保读取长度正确

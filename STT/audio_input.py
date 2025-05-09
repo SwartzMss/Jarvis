@@ -10,34 +10,26 @@ from wake_word import WakeWordDetector
 
 # 配置日志
 logging.basicConfig(
-    level=logging.DEBUG,  # 改为 DEBUG 级别以获取更多信息
+    level=logging.INFO, 
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
 class AudioInput:
-    def __init__(self, samplerate=16000, blocksize=1024, device=None):
+    def __init__(self):
         """
         初始化音频输入
-        
-        Args:
-            samplerate: 采样率
-            blocksize: 块大小
-            device: 音频设备名称或索引，None表示使用默认设备
         """
         # 目标采样率和帧长度
         self.target_rate = 16000  # Porcupine要求的采样率
         self.frame_length = 512   # Porcupine要求的帧长度
         
         # 设备采样率和帧长度
-        self.device_rate = samplerate
-        self.device_frame_length = blocksize
+        self.device_rate = None
+        self.device_frame_length = None
         
         # 查找VB-Audio Virtual Cable设备
-        if device is None:
-            device = self._find_vb_audio_device()
-        
-        self.device = device
+        self.device = self._find_vb_audio_device()
         self.asr_queue = Queue(maxsize=100)  # 限制队列大小
         self.in_stream = None
         self.is_running = False
@@ -49,7 +41,7 @@ class AudioInput:
         logger.info("唤醒词检测器初始化完成")
         
         # 打印设备信息
-        logger.info("\n可用的输入设备：")
+        logger.info("可用的输入设备：")
         try:
             devices = sd.query_devices()
             for i, dev in enumerate(devices):
@@ -58,7 +50,7 @@ class AudioInput:
         except Exception as e:
             logger.error(f"获取设备列表时出错: {str(e)}")
         
-        logger.info(f"当前使用的设备: {device if device is not None else '默认设备'}")
+        logger.info(f"当前使用的设备: {self.device  if self.device  is not None else '默认设备'}")
 
     def _find_vb_audio_device(self):
         """查找VB-Audio Virtual Cable设备"""
@@ -107,13 +99,13 @@ class AudioInput:
             max_amplitude = np.max(np.abs(audio_data))
             min_amplitude = np.min(np.abs(audio_data))
             mean_amplitude = np.mean(np.abs(audio_data))
-            logger.debug(f"原始音频数据 - 形状: {audio_data.shape}, 类型: {audio_data.dtype}, "
-                        f"最小值: {np.min(audio_data)}, 最大值: {np.max(audio_data)}, "
-                        f"平均绝对值: {mean_amplitude:.2f}, 最大绝对值: {max_amplitude}")
+            #logger.debug(f"原始音频数据 - 形状: {audio_data.shape}, 类型: {audio_data.dtype}, "
+            #            f"最小值: {np.min(audio_data)}, 最大值: {np.max(audio_data)}, "
+            #            f"平均绝对值: {mean_amplitude:.2f}, 最大绝对值: {max_amplitude}")
             
             # 检查音频数据是否有效（降低阈值到10）
             if max_amplitude < 10:  # 降低阈值
-                logger.debug(f"音频数据幅度太小 (最大绝对值: {max_amplitude:.2f})，可能是静音")
+                #logger.debug(f"音频数据幅度太小 (最大绝对值: {max_amplitude:.2f})，可能是静音")
                 return
             
             # 2. 确保读取长度正确
@@ -123,38 +115,33 @@ class AudioInput:
             
             # 3. 如果设备采样率 ≠ 16 kHz，则重采样
             if self.device_rate != self.target_rate:
-                logger.debug(f"重采样: {self.device_rate}Hz -> {self.target_rate}Hz")
-                # 转换为float32进行重采样
-                audio_float = audio_data.astype(np.float32) / 32767.0
-                # 重采样
-                resampled = resampy.resample(
-                    audio_float,
+                #logger.debug(f"重采样: {self.device_rate}Hz -> {self.target_rate}Hz")
+                audio_data = resampy.resample(
+                    audio_data.astype(np.float32),
                     self.device_rate,
                     self.target_rate,
-                )
-                # 转回int16
-                audio_data = (resampled * 32767).astype(np.int16)
-                logger.debug(f"重采样后 - 形状: {audio_data.shape}, 类型: {audio_data.dtype}, "
-                           f"最大值: {np.max(audio_data)}, 最小值: {np.min(audio_data)}")
+                ).astype(np.int16)
             
             # 4. 重采样之后长度可能因取整偏差而略有出入，统一成 512
             if len(audio_data) > self.frame_length:
-                logger.debug(f"截断音频数据: {len(audio_data)} -> {self.frame_length}")
-                audio_data = audio_data[:self.frame_length]
+                #logger.debug(f"截断音频数据: {len(audio_data)} -> {self.frame_length}")
+                audio_data = audio_data[: self.frame_length]
             elif len(audio_data) < self.frame_length:
-                logger.debug(f"填充音频数据: {len(audio_data)} -> {self.frame_length}")
-                # 使用线性插值填充
-                x_old = np.linspace(0, 1, len(audio_data))
-                x_new = np.linspace(0, 1, self.frame_length)
-                audio_data = np.interp(x_new, x_old, audio_data).astype(np.int16)
+                #logger.debug(f"填充音频数据: {len(audio_data)} -> {self.frame_length}")
+                audio_data = np.pad(
+                    audio_data,
+                    (0, self.frame_length - len(audio_data)),
+                    mode="constant",
+                    constant_values=0,
+                )
             
             # 5. 确保最终数据类型是int16
             audio_data = audio_data.astype(np.int16)
             
             # 记录最终音频数据的基本信息
-            logger.debug(f"最终音频数据 - 形状: {audio_data.shape}, 类型: {audio_data.dtype}, "
-                        f"最小值: {np.min(audio_data)}, 最大值: {np.max(audio_data)}, "
-                        f"平均绝对值: {np.mean(np.abs(audio_data)):.2f}")
+            #logger.debug(f"最终音频数据 - 形状: {audio_data.shape}, 类型: {audio_data.dtype}, "
+            #            f"最小值: {np.min(audio_data)}, 最大值: {np.max(audio_data)}, "
+            #            f"平均绝对值: {np.mean(np.abs(audio_data)):.2f}")
             
             # 6. 放入队列，如果队列满了就丢弃数据
             try:
@@ -169,9 +156,9 @@ class AudioInput:
         """处理音频数据"""
         try:
             # 记录音频数据的基本信息
-            logger.debug(f"处理音频数据 - 形状: {pcm.shape}, 类型: {pcm.dtype}, "
-                        f"最小值: {np.min(pcm)}, 最大值: {np.max(pcm)}, "
-                        f"平均值: {np.mean(pcm)}")
+            #logger.debug(f"处理音频数据 - 形状: {pcm.shape}, 类型: {pcm.dtype}, "
+            #            f"最小值: {np.min(pcm)}, 最大值: {np.max(pcm)}, "
+            #            f"平均值: {np.mean(pcm)}")
             
             # 使用唤醒词检测器
             keyword_index = self.wake_word_detector.process(pcm)
@@ -213,6 +200,8 @@ class AudioInput:
             self.device_rate = int(device_info['default_samplerate'])
             logger.info(f"使用设备采样率: {self.device_rate}Hz")
             logger.info(f"设备信息: {device_info}")
+            self.device_frame_length = int(self.frame_length * self.device_rate / self.target_rate)
+            logger.info(f"设备帧长: {self.device_frame_length}")
         except Exception as e:
             logger.error(f"获取设备信息失败: {str(e)}", exc_info=True)
             self.is_running = False
@@ -228,7 +217,7 @@ class AudioInput:
                 channels=1,
                 callback=self.audio_callback,
                 dtype=np.int16,
-                latency='low'
+                latency='high'
             )
             self.in_stream.start()
             logger.info(f"音频输入流启动成功，使用设备: {self.device if self.device is not None else '默认设备'}")

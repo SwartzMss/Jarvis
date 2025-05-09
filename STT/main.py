@@ -20,10 +20,7 @@ def main():
     
     # 初始化音频输入（默认会尝试使用VB-Audio Virtual Cable）
     global audio_input
-    audio_input = AudioInput(
-        samplerate=16000,
-        blocksize=1024
-    )
+    audio_input = AudioInput()
     
     try:
         # 启动音频处理

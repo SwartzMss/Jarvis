@@ -12,8 +12,9 @@ class WakeWordDetector:
         """
         self.porcupine = pvporcupine.create(
             access_key=PICOVOICE_ACCESS_KEY,
+            keyword_paths=None,
             keywords=[WAKE_WORD],
-            sensitivities=[0.7]
+            sensitivities=[0.8]
         )
         
     def process(self, pcm):

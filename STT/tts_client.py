@@ -1,24 +1,22 @@
 import aiohttp
-import logging
 import threading
 import queue
 import asyncio
 from typing import Optional, Dict, Any
-
-logger = logging.getLogger(__name__)
+from logger_config import logger
 
 class TTSClient:
     def __init__(self, base_url: str = "http://127.0.0.1:8001"):
         """
         初始化 TTS 客户端
         
-        Args:
+        参数:
             base_url: TTS 服务器的基础 URL
         """
         self.base_url = base_url.rstrip('/')
-        self.request_queue = queue.Queue()
-        self.worker_thread = None
-        self.is_running = True
+        self.request_queue = queue.Queue()  # 请求队列
+        self.worker_thread = None  # 工作线程
+        self.is_running = True  # 运行状态标志
         logger.info(f"TTS 客户端初始化完成，服务器地址: {self.base_url}")
         
         # 启动工作线程
@@ -27,13 +25,13 @@ class TTSClient:
         logger.info("TTS 工作线程已启动")
 
     def _worker_loop(self):
-        """工作线程循环"""
+        """工作线程循环，处理TTS请求队列"""
         while self.is_running:
             try:
                 # 从队列获取请求
                 text, voice, rate, volume = self.request_queue.get(timeout=1.0)
                 
-                # 创建新的事件循环
+                # 为每个请求创建新的事件循环
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
@@ -55,7 +53,15 @@ class TTSClient:
                 continue
 
     async def _send_request(self, text: str, voice: str, rate: str, volume: str):
-        """发送HTTP请求到TTS服务器"""
+        """
+        发送HTTP请求到TTS服务器
+        
+        参数:
+            text: 要转换的文本
+            voice: 语音角色
+            rate: 语速
+            volume: 音量
+        """
         async with aiohttp.ClientSession() as session:
             url = f"{self.base_url}/tts"
             payload = {
@@ -77,7 +83,7 @@ class TTSClient:
                         logger.error(f"TTS 请求失败: HTTP {response.status}, {error_text}")
                         raise Exception(f"TTS 请求失败: HTTP {response.status}, {error_text}")
             except Exception as e:
-                logger.error(f"TTS 请求异常: {str(e)}", exc_info=True)
+                logger.error(f"TTS 请求失败: {str(e)}")
                 raise
 
     def text_to_speech(
@@ -90,7 +96,7 @@ class TTSClient:
         """
         发送文本到 TTS 服务器进行语音合成和播放
         
-        Args:
+        参数:
             text: 要转换的文本
             voice: 语音角色
             rate: 语速
@@ -107,7 +113,7 @@ class TTSClient:
         """
         检查 TTS 服务器状态
         
-        Returns:
+        返回:
             bool: 服务器是否可用
         """
         try:
@@ -131,7 +137,7 @@ class TTSClient:
                 return False
 
     def close(self):
-        """关闭客户端"""
+        """关闭客户端，释放资源"""
         self.is_running = False
         if self.worker_thread:
             self.worker_thread.join(timeout=1.0)
@@ -139,6 +145,7 @@ class TTSClient:
 
 # 使用示例
 def example_usage():
+    """TTS客户端使用示例"""
     tts = TTSClient()
     try:
         # 检查服务器状态

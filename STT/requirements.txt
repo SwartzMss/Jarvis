@@ -10,3 +10,5 @@ python-dotenv==1.0.0
 dotenv==0.9.9
 pyaudio==0.2.14
 aiohttp==3.9.1
+funasr==1.2.6
+torch==2.7.0

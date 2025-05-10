@@ -5,16 +5,10 @@ import numpy as np
 import asyncio
 import os
 import resampy
-import logging
 from wake_word import WakeWordDetector
+from speech_recognition import SpeechRecognizer
 from tts_client import TTSClient
-
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from logger_config import logger
 
 class AudioInput:
     def __init__(self):
@@ -40,6 +34,7 @@ class AudioInput:
         logger.info("初始化唤醒词检测器...")
         self.wake_word_detector = WakeWordDetector()
         logger.info("唤醒词检测器初始化完成")
+        self.speech_recognizer = SpeechRecognizer()
         
         # 创建TTS客户端
         self.tts_client = TTSClient()
@@ -157,7 +152,15 @@ class AudioInput:
             logger.error(f"音频处理错误: {str(e)}", exc_info=True)
 
     async def process_audio(self, pcm):
-        """处理音频数据"""
+        """
+        处理音频数据
+        
+        参数:
+            pcm: 音频数据
+            
+        返回:
+            bool: 是否检测到唤醒词
+        """
         try:
             # 使用唤醒词检测器
             keyword_index = self.wake_word_detector.process(pcm)
@@ -239,7 +242,7 @@ class AudioInput:
         logger.info("音频处理启动完成")
 
     def stop(self):
-        """停止音频处理"""
+        """停止音频处理，释放所有资源"""
         if not self.is_running:
             return
             

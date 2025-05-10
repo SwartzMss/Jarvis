@@ -1,0 +1,16 @@
+{
+    "SenseVoiceSmall": {
+        "model.pt": {
+            "url": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall/resolve/main/model.pt"
+        },
+        "configuration.json": {
+            "url": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall/resolve/main/configuration.json"
+        },
+        "config.yaml": {
+            "url": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall/resolve/main/config.yaml"
+        },
+        "chn_jpn_yue_eng_ko_spectok.bpe.model": {
+            "url": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall/resolve/main/chn_jpn_yue_eng_ko_spectok.bpe.model"
+        }
+    }
+}

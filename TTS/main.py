@@ -1,57 +1,87 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import asyncio
-import signal
-import sys
-
+import logging
 from edge_tts_api import EdgeTTSApi
 from audio_output import AudioOutput
 
-# 信号处理：优雅退出
-def signal_handler(signum, frame):
-    print("\n正在停止程序…")
-    if hasattr(signal_handler, 'audio_out'):
-        signal_handler.audio_out.stop()
-    sys.exit(0)
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('tts_server.log', encoding='utf-8')
+    ]
+)
+logger = logging.getLogger(__name__)
 
-async def main():
-    # 初始化 TTS API 和自适应播放器
-    tts_api = EdgeTTSApi()
-    audio_out = AudioOutput(blocksize=1024)  # 自动检测设备采样率
-    audio_out.start()
-    signal_handler.audio_out = audio_out
+app = FastAPI(title="TTS API", description="文本转语音服务 API")
 
-    # 注册中断信号
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+# 初始化 TTS API 和音频输出
+logger.info("正在初始化 TTS 服务...")
+tts_api = EdgeTTSApi()
+audio_out = AudioOutput(blocksize=1024)
+audio_out.start()
+logger.info("TTS 服务初始化完成")
 
-    print("TTS 系统已启动，输入文字（q 退出）：")
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "zh-CN-XiaoxiaoNeural"
+    rate: str = "+0%"
+    volume: str = "+0%"
 
-    while True:
-        try:
-            text = input().strip()
-        except EOFError:
-            break
-        except Exception as e:
-            print("输入错误：", e)
-            break
-
-        if text.lower() == 'q':
-            break
+@app.post("/tts")
+async def text_to_speech(request: TTSRequest):
+    """
+    将文本转换为语音并直接播放
+    
+    - **text**: 要转换的文本
+    - **voice**: 语音角色（可选，默认为 zh-CN-XiaoxiaoNeural）
+    - **rate**: 语速（可选，默认为 +0%）
+    - **volume**: 音量（可选，默认为 +0%）
+    """
+    try:
+        logger.info(f"收到 TTS 请求: text='{request.text[:50]}...', voice={request.voice}, rate={request.rate}, volume={request.volume}")
+        
+        # 设置 TTS 参数
+        tts_api.voice = request.voice
+        tts_api.rate = request.rate
+        tts_api.volume = request.volume
+        
+        # 转换文本为音频
+        logger.info("开始转换文本为音频...")
+        audio_data, sample_rate = await tts_api.text_to_audio(request.text)
+        
+        if audio_data is None or sample_rate is None:
+            logger.error("语音合成失败")
+            raise HTTPException(status_code=500, detail="语音合成失败")
             
-        # 处理空输入
-        if not text:
-            continue
+        # 直接播放音频
+        logger.info(f"开始播放音频: 采样率={sample_rate}Hz, 数据大小={len(audio_data)}")
+        audio_out.play_audio(audio_data, sample_rate)
+        
+        logger.info("音频播放已开始")
+        return {"status": "success", "message": "音频播放已开始"}
+        
+    except Exception as e:
+        logger.error(f"处理请求时发生错误: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-        # 合成并播放
-        audio_data, sr = await tts_api.text_to_audio(text)
-        if audio_data is not None:
-            audio_out.play_audio(audio_data, sr)
-            print("播放完成")
-        else:
-            print("语音合成失败")
+@app.get("/")
+async def root():
+    """API 根路径，返回服务信息"""
+    logger.info("收到根路径请求")
+    return {
+        "service": "TTS API",
+        "version": "1.0.0",
+        "endpoints": {
+            "/tts": "POST - 文本转语音并播放",
+            "/": "GET - API 信息"
+        }
+    }
 
-    # 结束时关闭播放流
-    audio_out.stop()
-    print("程序已退出")
-
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    import uvicorn
+    logger.info("正在启动 TTS 服务器...")
+    uvicorn.run(app, host="127.0.0.1", port=8001) 

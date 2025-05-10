@@ -1,5 +1,5 @@
 import sounddevice as sd
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 import threading
 import numpy as np
 import asyncio
@@ -7,6 +7,7 @@ import os
 import resampy
 import logging
 from wake_word import WakeWordDetector
+from tts_client import TTSClient
 
 # 配置日志
 logging.basicConfig(
@@ -30,7 +31,7 @@ class AudioInput:
         
         # 查找VB-Audio Virtual Cable设备
         self.device = self._find_vb_audio_device()
-        self.asr_queue = Queue(maxsize=100)  # 限制队列大小
+        self.asr_queue = Queue(maxsize=1000)  # 增加队列大小
         self.in_stream = None
         self.is_running = False
         self.overflow_count = 0  # 添加溢出计数器
@@ -39,6 +40,9 @@ class AudioInput:
         logger.info("初始化唤醒词检测器...")
         self.wake_word_detector = WakeWordDetector()
         logger.info("唤醒词检测器初始化完成")
+        
+        # 创建TTS客户端
+        self.tts_client = TTSClient()
         
         # 打印设备信息
         logger.info("可用的输入设备：")
@@ -146,7 +150,7 @@ class AudioInput:
             # 6. 放入队列，如果队列满了就丢弃数据
             try:
                 self.asr_queue.put_nowait(audio_data)
-            except Queue.Full:
+            except Full:
                 logger.warning("音频队列已满，丢弃数据")
             
         except Exception as e:
@@ -155,15 +159,12 @@ class AudioInput:
     async def process_audio(self, pcm):
         """处理音频数据"""
         try:
-            # 记录音频数据的基本信息
-            #logger.debug(f"处理音频数据 - 形状: {pcm.shape}, 类型: {pcm.dtype}, "
-            #            f"最小值: {np.min(pcm)}, 最大值: {np.max(pcm)}, "
-            #            f"平均值: {np.mean(pcm)}")
-            
             # 使用唤醒词检测器
             keyword_index = self.wake_word_detector.process(pcm)
             if keyword_index >= 0:
                 logger.info(f"检测到唤醒词！关键词索引: {keyword_index}")
+                # 直接调用TTS客户端，不需要异步
+                self.tts_client.text_to_speech("主人我在")
                 return True
             return False
         except Exception as e:
@@ -244,6 +245,14 @@ class AudioInput:
             
         logger.info("开始停止音频处理...")
         self.is_running = False
+        
+        # 关闭TTS客户端
+        try:
+            logger.info("关闭TTS客户端...")
+            self.tts_client.close()
+            logger.info("TTS客户端已关闭")
+        except Exception as e:
+            logger.error(f"关闭TTS客户端失败: {str(e)}", exc_info=True)
         
         # 停止音频流
         if self.in_stream:

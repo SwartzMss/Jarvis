@@ -13,8 +13,6 @@ class ChatSession:
     async def initialize(self):
         """初始化会话"""
         if not self._initialized:
-            # 确保 MCP server 已初始化
-            await mcp_server_manager.initialize_servers()
             self.dispatcher_agent = await create_dispatcher_agent()
             self.current_agent = self.dispatcher_agent  # 初始时使用 dispatcher
             self._initialized = True
@@ -54,7 +52,8 @@ class ChatSession:
         """清理资源"""
         if self._initialized:
             try:
-                await mcp_server_manager.close()
+                # 不再需要在这里关闭 MCP 服务器，因为它现在由 main.py 统一管理
+                pass
             except Exception as e:
                 print(f"Error closing session: {e}")
             finally:

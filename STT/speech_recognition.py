@@ -5,6 +5,7 @@ import asyncio
 from logger_config import logger
 from config import SAMPLE_RATE, CHANNELS, CHUNK_SIZE, ASR_CONFIG
 from sense_voice_service import SenseVoiceService
+from agent_client import AgentClient
 import time
 
 class SpeechRecognizer:
@@ -22,6 +23,9 @@ class SpeechRecognizer:
         self.silence_threshold = 0.05 # 静音阈值 (提高阈值，减少环境噪音影响)
         self.max_buffer_size = 40     # 最大缓冲区大小，约2秒的音频 (40帧 * 0.05秒/帧 = 2秒)
         self.min_amplitude_threshold = 200  # 最小有效音频幅度阈值
+        
+        # 初始化Agent客户端
+        self.agent_client = AgentClient()
         
         # 定时器相关参数
         self.last_audio_time = 0  # 上次收到音频数据的时间
@@ -156,6 +160,8 @@ class SpeechRecognizer:
                             if self.sentence_buffer.strip():
                                 sentence = self.sentence_buffer.strip()
                                 logger.info(f"输出句子: {sentence}")
+                                # 发送到Agent
+                                await self.agent_client.send_message(sentence)
                                 self.sentence_buffer = ""
                                 self.has_valid_text = False
                             self.has_valid_audio = False
@@ -230,6 +236,8 @@ class SpeechRecognizer:
         try:
             if self.is_running:
                 self.stop()
+            # 关闭Agent客户端
+            asyncio.create_task(self.agent_client.close())
             logger.info("语音识别器资源已释放")
         except Exception as e:
             logger.error(f"释放资源时出错: {str(e)}", exc_info=True)
